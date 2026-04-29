@@ -710,20 +710,14 @@
       font-size: 10px; letter-spacing: -0.01em;
       max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .bn-fab {
-      width: 52px; height: 52px;
-      flex-shrink: 0;
-      border-radius: 50%;
-      background: var(--accent); color: #fff;
-      border: none;
-      display: flex; align-items: center; justify-content: center;
-      margin: 6px 4px 0;
-      box-shadow: 0 6px 20px rgba(201,100,66,0.32), 0 1px 3px rgba(0,0,0,0.12);
-      cursor: pointer;
-      transition: transform 0.12s, background 0.12s;
+    /* bn-fab 제거됨 — 소비 추가는 소비내역 탭에서 */
+    .bn-fab { display: none !important; }
+
+    /* 소비내역 모바일 플로팅 버튼 */
+    .expense-fab { display: none; }
+    @media (max-width: 768px) {
+      .expense-fab { display: flex !important; }
     }
-    .bn-fab:active { transform: scale(0.94); }
-    .bn-fab:hover { background: var(--accent-2); }
 
     /* density compact override on mobile baseline */
     [data-density="compact"] .content { padding: 18px 14px 100px; }

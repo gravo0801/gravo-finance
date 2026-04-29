@@ -86,7 +86,9 @@ function AppShell() {
           <Topbar active={active} setDrawerOpen={setDrawerOpen}
             openSearch={() => setSearchOpen(true)}
             openNotif={() => setNotifOpen(true)}
-            openSettings={() => setSettingsOpen(true)} />
+            openSettings={() => setSettingsOpen(true)}
+            theme={tweaks.theme}
+            onToggleTheme={() => setTweak("theme", tweaks.theme === "dark" ? "light" : "dark")} />
           <div className="content">
             <Page
               openExpense={() => setExpenseOpen(true)}
@@ -98,7 +100,7 @@ function AppShell() {
             />
           </div>
         </div>
-        <BottomNav active={active} setActive={setActive} onAdd={() => setExpenseOpen(true)} />
+        <BottomNav active={active} setActive={setActive} />
       </div>
 
       <AddExpenseModal open={expenseOpen} onClose={() => setExpenseOpen(false)} />

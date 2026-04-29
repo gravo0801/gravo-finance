@@ -29,6 +29,8 @@ function MonthSwitchLive() {
 // ─────────────────────────────────────────────────────────
 function DashboardPage({ openExpense, openCard }) {
   const store = useStore();
+  const toast = useToast();
+  const [editCardDash, setEditCardDash] = uS(null);
   const monthExp = useMonthExpenses();
   const totalAssets = store.state.accounts.reduce((s, a) => s + Math.max(a.balance, 0), 0);
   const totalDebt = -store.state.accounts.reduce((s, a) => s + Math.min(a.balance, 0), 0);
@@ -145,15 +147,33 @@ function DashboardPage({ openExpense, openCard }) {
           const pct = (c.used / c.limit) * 100;
           const isHigh = pct > 70;
           return (
-            <div key={c.id} className="row">
-              <div className="cat-mark" style={{background:'var(--paper-2)', color:'var(--ink)', fontFamily:'var(--mono)', fontSize:11, fontStyle:'normal'}}>•••{c.last4.slice(-2)}</div>
-              <div className="row-body" style={{maxWidth:200}}><div className="row-title">{c.co}</div><div className="row-meta">{c.name} · 결제일 {c.paymentDay}일</div></div>
-              <div style={{flex:1, minWidth:0}}><div className="bar"><div className="bar-fill" style={{width: pct + '%', background: isHigh?'var(--negative)':'var(--accent)'}}></div></div></div>
-              <div className="mono text-sm" style={{textAlign:'right', minWidth:130}}>
-                <span className={'fw6 ' + (isHigh?'neg':'')}>{fmtKRW(c.used)}</span>
-                <span className="faint"> / {fmtKRW(c.limit, {compact:true})}</span>
+            <div key={c.id}>
+              <div className="row">
+                <div className="cat-mark" style={{background:'var(--paper-2)', color:'var(--ink)', fontFamily:'var(--mono)', fontSize:11, fontStyle:'normal'}}>•••{c.last4.slice(-2)}</div>
+                <div className="row-body" style={{maxWidth:200}}><div className="row-title">{c.co}</div><div className="row-meta">{c.name} · 결제일 {c.paymentDay}일</div></div>
+                <div style={{flex:1, minWidth:0}}><div className="bar"><div className="bar-fill" style={{width: pct + '%', background: isHigh?'var(--negative)':'var(--accent)'}}></div></div></div>
+                <div className="mono text-sm" style={{textAlign:'right', minWidth:130}}>
+                  <span className={'fw6 ' + (isHigh?'neg':'')}>{fmtKRW(c.used)}</span>
+                  <span className="faint"> / {fmtKRW(c.limit, {compact:true})}</span>
+                </div>
+                <div className={'mono fw6 ' + (isHigh?'neg':'muted')} style={{minWidth:50, textAlign:'right'}}>{pct.toFixed(0)}%</div>
+                <button className="icon-btn" style={{width:28,height:28}} onClick={() => setEditCardDash(editCardDash===c.id?null:c.id)}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                </button>
               </div>
-              <div className={'mono fw6 ' + (isHigh?'neg':'muted')} style={{minWidth:50, textAlign:'right'}}>{pct.toFixed(0)}%</div>
+              {editCardDash === c.id && (
+                <div style={{display:'flex', gap:8, alignItems:'center', padding:'9px 12px', background:'var(--paper-2)', borderRadius:'var(--r-sm)', margin:'4px 0', flexWrap:'wrap'}}>
+                  <span style={{fontSize:11.5, fontWeight:600, color:'var(--ink-3)'}}>이달 사용액</span>
+                  <input type="number" defaultValue={c.used} id={`ddash-${c.id}`}
+                    style={{flex:'1 1 120px', padding:'6px 9px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, fontFamily:'var(--mono)', background:'var(--bg)'}} />
+                  <button className="btn btn-primary btn-sm" onClick={() => {
+                    const v = parseInt(document.getElementById(`ddash-${c.id}`)?.value);
+                    if (!isNaN(v)) { store.updateCard(c.id, {used:v}); toast('수정됐어요'); }
+                    setEditCardDash(null);
+                  }}>저장</button>
+                  <button className="btn btn-sm" onClick={() => setEditCardDash(null)}>취소</button>
+                </div>
+              )}
             </div>
           );
         })}
@@ -169,6 +189,7 @@ function AccountsPage({ openAccount, openIncome }) {
   const store = useStore();
   const toast = useToast();
   const [bank, setBank] = uS(store.state.accounts[0]?.id);
+  const [editBal, setEditBal] = uS(null); // {id, balance, name}
   // Reset selection if account deleted
   uM(() => {
     if (!store.state.accounts.find(a => a.id === bank) && store.state.accounts[0]) {
@@ -207,19 +228,36 @@ function AccountsPage({ openAccount, openIncome }) {
         <div className="between" style={{alignItems:'flex-start'}}>
           <div>
             <div className="text-xs muted fw6" style={{textTransform:'uppercase', letterSpacing:'0.12em', marginBottom:8}}>{a.name} · {a.sub}</div>
-            <div className="serif" style={{fontSize:54, fontWeight:400, letterSpacing:'-0.04em', lineHeight:1, color: isDebt?'var(--negative)':'var(--ink)'}}>{fmtKRW(a.balance, {compact:true})}</div>
+            <div className="serif" style={{fontSize:48, fontWeight:400, letterSpacing:'-0.04em', lineHeight:1, color: isDebt?'var(--negative)':'var(--ink)'}}>{fmtKRW(a.balance)}</div>
             <div style={{marginTop:14, display:'flex', gap:14, alignItems:'center'}}>
               <span className="text-sm muted">2026년 4월 26일 기준</span>
               {isDebt && <span className="chip neg">한도 {pct.toFixed(1)}%</span>}
             </div>
           </div>
-          {store.state.accounts.length > 1 && (
+          <div style={{display:'flex', gap:8}}>
+            <button className="btn btn-sm" onClick={() => setEditBal({id:a.id, balance:a.balance, name:a.name})}>잔액 수정</button>
+            {store.state.accounts.length > 1 && (
             <button className="icon-btn" title="통장 삭제"
               onClick={() => { if (confirm(`"${a.name}"을(를) 삭제할까요?`)) { store.deleteAccount(a.id); toast('통장이 삭제되었어요'); }}}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
-          )}
+            )}
+          </div>
         </div>
+        {editBal && editBal.id === a.id && (
+          <div style={{marginTop:16, padding:'14px 16px', background:'var(--paper-2)', borderRadius:'var(--r-sm)', border:'1px solid var(--line)', display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
+            <span style={{fontSize:12, fontWeight:600, color:'var(--ink-3)', flex:'0 0 auto'}}>잔액 수정 (원)</span>
+            <input type="number" defaultValue={editBal.balance}
+              id="bal-edit-input"
+              style={{flex:'1 1 160px', padding:'8px 11px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--bg)', fontFamily:'var(--mono)'}} />
+            <button className="btn btn-primary btn-sm" onClick={() => {
+              const v = parseInt(document.getElementById('bal-edit-input').value);
+              if (!isNaN(v)) { store.updateAccount(editBal.id, {balance:v}); toast('잔액이 수정됐어요'); }
+              setEditBal(null);
+            }}>저장</button>
+            <button className="btn btn-sm" onClick={() => setEditBal(null)}>취소</button>
+          </div>
+        )}
         {isDebt && (
           <div style={{marginTop:24}}>
             <div className="bar" style={{height:6}}><div className="bar-fill" style={{width: pct + '%', background:'var(--negative)'}}></div></div>
@@ -281,6 +319,7 @@ function FlowMapPage() {
 function FixedCostsPage({ openFixed }) {
   const store = useStore();
   const toast = useToast();
+  const [editItem, setEditItem] = uS(null);
   // group by group
   const groups = uM(() => {
     const m = {};
@@ -308,13 +347,21 @@ function FixedCostsPage({ openFixed }) {
           </div>
           <div style={{padding:'4px 24px'}}>
             {g.items.map(item => (
-              <div key={item.id} className="row" style={{cursor:'default'}}>
-                <div className="day-chip">{item.day}</div>
-                <div className="row-body"><div className="row-title">{item.name}</div><div className="row-meta">{item.meta}</div></div>
-                <div className="row-amt out mono">−{fmtKRW(item.amount)}</div>
-                <button className="icon-btn" style={{width:28, height:28}} onClick={() => { store.deleteFixed(item.id); toast('삭제되었어요'); }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                </button>
+              <div key={item.id}>
+                <div className="row" style={{cursor:'default'}}>
+                  <div className="day-chip">{item.day}</div>
+                  <div className="row-body"><div className="row-title">{item.name}</div><div className="row-meta">{item.meta}</div></div>
+                  <div className="row-amt out mono">−{fmtKRW(item.amount)}</div>
+                  <button className="icon-btn" title="수정" style={{width:28,height:28}} onClick={() => setEditItem(editItem?.id===item.id?null:item)}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                  </button>
+                  <button className="icon-btn" style={{width:28, height:28}} onClick={() => { store.deleteFixed(item.id); toast('삭제되었어요'); }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  </button>
+                </div>
+                {editItem?.id === item.id && (
+                  <InlineEditFixed item={item} onSave={(patch) => { store.updateFixed(item.id, patch); toast('수정됐어요'); setEditItem(null); }} onCancel={() => setEditItem(null)} />
+                )}
               </div>
             ))}
           </div>
@@ -446,7 +493,24 @@ function ExpensesPage({ openExpense }) {
     <div className="tab-content">
       <PageHeader eyebrow="Spending" title="Day by " titleEm="day."
         sub={`이달 ${monthExp.length}건 · 합계 ${fmtKRW(monthExp.reduce((s,e)=>s+e.amount,0))}`}
-        right={<button className="btn btn-primary" onClick={openExpense}>+ 소비 추가</button>} />
+        right={
+          <button className="btn btn-primary" onClick={openExpense} style={{display:'flex',alignItems:'center',gap:6}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            소비 추가
+          </button>
+        } />
+      {/* 모바일 플로팅 버튼 */}
+      <button onClick={openExpense} style={{
+        display:'none',
+        position:'fixed', bottom:'calc(72px + env(safe-area-inset-bottom, 0px))', right:20,
+        width:52, height:52, borderRadius:'50%',
+        background:'var(--accent)', color:'#fff', border:'none',
+        boxShadow:'0 4px 20px rgba(0,0,0,.25)',
+        cursor:'pointer', zIndex:80,
+        alignItems:'center', justifyContent:'center'
+      }} className="expense-fab">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
 
       <div className="grid-4" style={{marginBottom:20}}>
         <Tile label="이달 소비" num={fmtKRW(total)} sub={`${filtered.length}건`} accent="var(--negative)" />
@@ -498,21 +562,7 @@ function ExpensesPage({ openExpense }) {
         ) : sortBy !== 'date' ? (
           <div style={{padding:'4px 0'}}>
             {filtered.map(e => (
-              <div key={e.id} className="expense-row">
-                <div className="cat-mark" style={{background:'color-mix(in oklab, '+toneMap[e.tone]+' 12%, transparent)', color:toneMap[e.tone]}}>{e.mark}</div>
-                <div>
-                  <div className="row-title">{e.title}</div>
-                  <div style={{display:'flex', gap:6, marginTop:4}}>
-                    <span className="chip">{e.cat}</span>
-                    <span className="chip">{e.card}</span>
-                    <span className="chip" style={{color:'var(--ink-4)'}}>{e.date.slice(5)}</span>
-                  </div>
-                </div>
-                <button className="icon-btn" style={{width:28, height:28}} onClick={() => { store.deleteExpense(e.id); toast('삭제되었어요'); }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
-                </button>
-                <div className="mono fw6 neg">−{fmtKRW(e.amount)}</div>
-              </div>
+              <ExpenseRow key={e.id} e={e} toneMap={toneMap} onDelete={() => { store.deleteExpense(e.id); toast('삭제되었어요'); }} onUpdate={(patch) => { store.updateExpense(e.id, patch); toast('수정됐어요'); }} store={store} showDate />
             ))}
           </div>
         ) : dates.map(date => {
@@ -528,20 +578,7 @@ function ExpensesPage({ openExpense }) {
                 <span className="mono fw6 neg text-sm">−{fmtKRW(dayTotal)}</span>
               </div>
               {byDate[date].map(e => (
-                <div key={e.id} className="expense-row">
-                  <div className="cat-mark" style={{background:'color-mix(in oklab, '+toneMap[e.tone]+' 12%, transparent)', color:toneMap[e.tone]}}>{e.mark}</div>
-                  <div>
-                    <div className="row-title">{e.title}</div>
-                    <div style={{display:'flex', gap:6, marginTop:4}}>
-                      <span className="chip">{e.cat}</span>
-                      <span className="chip">{e.card}</span>
-                    </div>
-                  </div>
-                  <button className="icon-btn" style={{width:28, height:28}} onClick={() => { store.deleteExpense(e.id); toast('삭제되었어요'); }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
-                  </button>
-                  <div className="mono fw6 neg">−{fmtKRW(e.amount)}</div>
-                </div>
+                <ExpenseRow key={e.id} e={e} toneMap={toneMap} onDelete={() => { store.deleteExpense(e.id); toast('삭제되었어요'); }} onUpdate={(patch) => { store.updateExpense(e.id, patch); toast('수정됐어요'); }} store={store} />
               ))}
             </div>
           );
@@ -555,6 +592,7 @@ function ExpensesPage({ openExpense }) {
 function CreditCardsPage({ openCard }) {
   const store = useStore();
   const toast = useToast();
+  const [editCardId, setEditCardId] = uS(null);
   const cards = store.state.cards;
   const totalLimit = cards.reduce((s,c) => s+c.limit, 0);
   const totalUsed = cards.reduce((s,c) => s+c.used, 0);
@@ -588,11 +626,34 @@ function CreditCardsPage({ openCard }) {
         {cards.map(c => {
           const pct = (c.used / c.limit) * 100;
           return (
-            <div key={c.id} className="row">
-              <div className="cat-mark" style={{background:'var(--paper-2)', color:'var(--ink)', fontFamily:'var(--mono)', fontSize:11, fontStyle:'normal'}}>•••{c.last4.slice(-2)}</div>
-              <div className="row-body" style={{maxWidth:200}}><div className="row-title">{c.co}</div><div className="row-meta">{c.name}</div></div>
-              <div style={{flex:1, minWidth:0}}><div className="bar"><div className="bar-fill" style={{width:pct+'%', background:'var(--accent)'}}></div></div></div>
-              <div className="mono fw6 text-sm" style={{minWidth:100, textAlign:'right'}}>{fmtKRW(c.used)}</div>
+            <div key={c.id}>
+              <div className="row">
+                <div className="cat-mark" style={{background:'var(--paper-2)', color:'var(--ink)', fontFamily:'var(--mono)', fontSize:11, fontStyle:'normal'}}>•••{c.last4.slice(-2)}</div>
+                <div className="row-body" style={{maxWidth:200}}><div className="row-title">{c.co}</div><div className="row-meta">{c.name}</div></div>
+                <div style={{flex:1, minWidth:0}}><div className="bar"><div className="bar-fill" style={{width:pct+'%', background:'var(--accent)'}}></div></div></div>
+                <div className="mono fw6 text-sm" style={{minWidth:100, textAlign:'right'}}>{fmtKRW(c.used)} / {fmtKRW(c.limit,{compact:true})}</div>
+                <button className="icon-btn" title="사용액 수정" style={{width:28,height:28}} onClick={() => setEditCardId(editCardId===c.id?null:c.id)}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                </button>
+              </div>
+              {editCardId === c.id && (
+                <div style={{display:'flex', gap:8, alignItems:'center', padding:'10px 14px', background:'var(--paper-2)', borderRadius:'var(--r-sm)', margin:'4px 0', flexWrap:'wrap'}}>
+                  <span style={{fontSize:12, fontWeight:600, color:'var(--ink-3)'}}>이달 사용액 (원)</span>
+                  <input type="number" defaultValue={c.used} id={`cused-${c.id}`}
+                    style={{flex:'1 1 140px', padding:'7px 10px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, fontFamily:'var(--mono)', background:'var(--bg)'}} />
+                  <span style={{fontSize:12, fontWeight:600, color:'var(--ink-3)'}}>한도 (원)</span>
+                  <input type="number" defaultValue={c.limit} id={`climit-${c.id}`}
+                    style={{flex:'1 1 140px', padding:'7px 10px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, fontFamily:'var(--mono)', background:'var(--bg)'}} />
+                  <button className="btn btn-primary btn-sm" onClick={() => {
+                    const used = parseInt(document.getElementById(`cused-${c.id}`)?.value);
+                    const limit = parseInt(document.getElementById(`climit-${c.id}`)?.value);
+                    store.updateCard(c.id, { used: isNaN(used)?c.used:used, limit: isNaN(limit)?c.limit:limit });
+                    toast('카드 정보가 수정됐어요');
+                    setEditCardId(null);
+                  }}>저장</button>
+                  <button className="btn btn-sm" onClick={() => setEditCardId(null)}>취소</button>
+                </div>
+              )}
             </div>
           );
         })}
@@ -651,6 +712,86 @@ function AnalyticsPage() {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// ── Inline edit helper components ──────────────────────────
+
+function InlineEditFixed({ item, onSave, onCancel }) {
+  const [name, setName] = uS(item.name);
+  const [meta, setMeta] = uS(item.meta);
+  const [day, setDay]   = uS(item.day);
+  const [amount, setAmount] = uS(item.amount);
+  const inpStyle = {padding:'7px 10px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--bg)', fontFamily:'var(--sans)'};
+  return (
+    <div style={{padding:'12px 14px', background:'var(--accent-soft)', borderRadius:'var(--r-sm)', margin:'4px 0', display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(130px, 1fr))', gap:8}}>
+      <div><div style={{fontSize:10.5, fontWeight:600, color:'var(--ink-4)', marginBottom:3}}>항목명</div><input value={name} onChange={e=>setName(e.target.value)} style={{...inpStyle, width:'100%'}} /></div>
+      <div><div style={{fontSize:10.5, fontWeight:600, color:'var(--ink-4)', marginBottom:3}}>메모</div><input value={meta} onChange={e=>setMeta(e.target.value)} style={{...inpStyle, width:'100%'}} /></div>
+      <div><div style={{fontSize:10.5, fontWeight:600, color:'var(--ink-4)', marginBottom:3}}>날짜(일)</div><input type="number" min="1" max="31" value={day} onChange={e=>setDay(+e.target.value)} style={{...inpStyle, width:'100%'}} /></div>
+      <div><div style={{fontSize:10.5, fontWeight:600, color:'var(--ink-4)', marginBottom:3}}>금액(원)</div><input type="number" value={amount} onChange={e=>setAmount(+e.target.value)} style={{...inpStyle, width:'100%', fontFamily:'var(--mono)'}} /></div>
+      <div style={{display:'flex', gap:6, alignItems:'flex-end'}}>
+        <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={() => onSave({name,meta,day,amount})}>저장</button>
+        <button className="btn btn-sm" style={{flex:1}} onClick={onCancel}>취소</button>
+      </div>
+    </div>
+  );
+}
+
+function ExpenseRow({ e, toneMap, onDelete, onUpdate, store, showDate }) {
+  const [editing, setEditing] = uS(false);
+  const [title, setTitle]   = uS(e.title);
+  const [amount, setAmount] = uS(e.amount);
+  const [cat, setCat]       = uS(e.cat);
+  const [card, setCard]     = uS(e.card);
+  const cats = ['식비','카페','생활','문화','교통','기타'];
+  const catTone = {식비:'indigo',카페:'warm',생활:'pos',문화:'accent',교통:'neg',기타:'indigo'};
+  const catMark = {식비:'식',카페:'커',생활:'생',문화:'문',교통:'교',기타:'기'};
+  const inpSt = {padding:'6px 9px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:12.5, background:'var(--bg)', fontFamily:'var(--sans)'};
+  return (
+    <div>
+      <div className="expense-row">
+        <div className="cat-mark" style={{background:'color-mix(in oklab, '+toneMap[e.tone]+' 12%, transparent)', color:toneMap[e.tone]}}>{e.mark}</div>
+        <div style={{flex:1, minWidth:0}}>
+          <div className="row-title">{e.title}</div>
+          <div style={{display:'flex', gap:6, marginTop:4, flexWrap:'wrap'}}>
+            <span className="chip">{e.cat}</span>
+            <span className="chip">{e.card}</span>
+            {showDate && <span className="chip" style={{color:'var(--ink-4)'}}>{e.date.slice(5)}</span>}
+          </div>
+        </div>
+        <button className="icon-btn" style={{width:28,height:28}} onClick={() => setEditing(!editing)}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+        </button>
+        <button className="icon-btn" style={{width:28, height:28}} onClick={onDelete}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+        <div className="mono fw6 neg">−{fmtKRW(e.amount)}</div>
+      </div>
+      {editing && (
+        <div style={{padding:'10px 12px', background:'var(--accent-soft)', borderRadius:'var(--r-sm)', margin:'4px 0', display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:8}}>
+          <div><div style={{fontSize:10.5,fontWeight:600,color:'var(--ink-4)',marginBottom:3}}>내용</div><input value={title} onChange={e=>setTitle(e.target.value)} style={{...inpSt,width:'100%'}} /></div>
+          <div><div style={{fontSize:10.5,fontWeight:600,color:'var(--ink-4)',marginBottom:3}}>금액</div><input type="number" value={amount} onChange={e=>setAmount(+e.target.value)} style={{...inpSt,width:'100%',fontFamily:'var(--mono)'}} /></div>
+          <div><div style={{fontSize:10.5,fontWeight:600,color:'var(--ink-4)',marginBottom:3}}>카테고리</div>
+            <select value={cat} onChange={e=>setCat(e.target.value)} style={{...inpSt,width:'100%',cursor:'pointer'}}>
+              {cats.map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div><div style={{fontSize:10.5,fontWeight:600,color:'var(--ink-4)',marginBottom:3}}>카드</div>
+            <select value={card} onChange={e=>setCard(e.target.value)} style={{...inpSt,width:'100%',cursor:'pointer'}}>
+              {store.state.cards.map(c=><option key={c.id} value={c.co}>{c.co}</option>)}
+            </select>
+          </div>
+          <div style={{display:'flex',gap:6,alignItems:'flex-end'}}>
+            <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={()=>{
+              onUpdate({title, amount, cat, tone:catTone[cat]||'indigo', mark:catMark[cat]||'기', card});
+              setEditing(false);
+            }}>저장</button>
+            <button className="btn btn-sm" style={{flex:1}} onClick={()=>setEditing(false)}>취소</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
