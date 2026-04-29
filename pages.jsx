@@ -202,71 +202,9 @@ function DashboardPage({ openExpense, openCard }) {
         </div>
 
         {/* 카드별 상세 — 자동결제 예약 + 실사용 + 잔여 */}
-        {store.state.cards.map(c => {
-          const autoPays = (store.state.auto_pays||[]).filter(ap=>ap.cardCo===c.co||ap.cardId===c.id);
-          const autoPayTotal = autoPays.reduce((s,ap)=>s+ap.amount, 0);
-          const cardBudgetAmt = (store.state.cardMonthlyBudgets||{})[c.id] || c.limit || 1000000;
-          const spent = monthExp.filter(e=>e.card===c.co).reduce((s,e)=>s+e.amount, 0);
-          const remaining = cardBudgetAmt - autoPayTotal - spent;
-          const autoPct  = Math.min(autoPayTotal / cardBudgetAmt * 100, 100);
-          const spentPct = Math.min(spent / cardBudgetAmt * 100, 100 - autoPct);
-          const isOver   = remaining < 0;
-          const [editBudgetCard, setEditBudgetCard] = uS(false);
-          const [budgetCardVal, setBudgetCardVal]   = uS('');
-          return (
-            <div key={c.id} style={{marginBottom:14, paddingBottom:14, borderBottom:'1px solid var(--line)'}}>
-              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
-                <div style={{display:'flex', alignItems:'center', gap:8}}>
-                  <span style={{fontWeight:600, fontSize:13.5}}>{c.co}</span>
-                  <span style={{fontSize:11.5, color:'var(--ink-3)'}}>{c.name}</span>
-                </div>
-                <div style={{display:'flex', alignItems:'center', gap:8}}>
-                  {editBudgetCard ? (
-                    <div style={{display:'flex', gap:5}}>
-                      <input type="number" value={budgetCardVal} onChange={e=>setBudgetCardVal(e.target.value)} placeholder="카드예산"
-                        style={{width:90, padding:'4px 8px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:12, fontFamily:'var(--mono)', background:'var(--bg)'}} />
-                      <button className="btn btn-primary btn-sm" onClick={()=>{const v=parseInt(budgetCardVal);if(!isNaN(v)){store.setCardMonthlyBudget(c.id,v);toast('예산 설정됨');}setEditBudgetCard(false);}}>저장</button>
-                      <button className="btn btn-sm" onClick={()=>setEditBudgetCard(false)}>✕</button>
-                    </div>
-                  ) : (
-                    <button className="btn btn-sm" style={{fontSize:11}} onClick={()=>{setBudgetCardVal(String(cardBudgetAmt));setEditBudgetCard(true);}}>예산 {fmtKRW(cardBudgetAmt,{compact:true})}</button>
-                  )}
-                  <span style={{fontFamily:'var(--mono)', fontSize:12, fontWeight:700, color:isOver?'var(--negative)':'var(--positive)'}}>
-                    {isOver ? '초과 '+fmtKRW(Math.abs(remaining)) : '잔여 '+fmtKRW(remaining)}
-                  </span>
-                </div>
-              </div>
-
-              {/* 3단 막대: [자동결제예약 | 실사용 | 여유] */}
-              <div style={{height:10, background:'var(--paper-2)', borderRadius:5, overflow:'hidden', display:'flex', marginBottom:6}}>
-                {autoPayTotal > 0 && <div style={{height:'100%', background:'#8B5CF6', width:autoPct+'%', flexShrink:0}} title={`자동결제 예약: ${fmtKRW(autoPayTotal)}`}></div>}
-                {spent > 0 && <div style={{height:'100%', background: isOver?'var(--negative)':'var(--accent)', width:spentPct+'%', flexShrink:0}} title={`실사용: ${fmtKRW(spent)}`}></div>}
-              </div>
-
-              {/* 범례 */}
-              <div style={{display:'flex', gap:14, fontSize:11.5, color:'var(--ink-3)', flexWrap:'wrap'}}>
-                {autoPayTotal > 0 && <span style={{display:'flex', alignItems:'center', gap:4}}><span style={{width:8, height:8, borderRadius:2, background:'#8B5CF6', display:'inline-block'}}></span>자동결제 {fmtKRW(autoPayTotal)}</span>}
-                <span style={{display:'flex', alignItems:'center', gap:4}}><span style={{width:8, height:8, borderRadius:2, background:'var(--accent)', display:'inline-block'}}></span>사용 {fmtKRW(spent)}</span>
-                <span style={{display:'flex', alignItems:'center', gap:4, marginLeft:'auto', fontWeight:600, color:isOver?'var(--negative)':'var(--positive)'}}>
-                  {isOver ? '⚠️ 예산 초과' : `잔여 ${fmtKRW(remaining)}`}
-                </span>
-              </div>
-
-              {/* 자동결제 항목 펼치기 */}
-              {autoPays.length > 0 && (
-                <div style={{marginTop:6, padding:'8px 10px', background:'rgba(139,92,246,0.06)', borderRadius:'var(--r-sm)', border:'1px solid rgba(139,92,246,0.15)'}}>
-                  <div style={{fontSize:10.5, fontWeight:700, color:'#8B5CF6', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.07em'}}>자동결제 예약 항목</div>
-                  {autoPays.map(ap => (
-                    <div key={ap.id} style={{display:'flex', justifyContent:'space-between', fontSize:12, padding:'2px 0', color:'var(--ink-2)'}}>
-                      <span>{ap.day}일 {ap.service}</span>
-                      <span style={{fontFamily:'var(--mono)', fontWeight:600, color:'#8B5CF6'}}>−{fmtKRW(ap.amount)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {store.state.cards.map(c => (
+          <CardSpendingRow key={c.id} c={c} monthExp={monthExp} store={store} toast={toast} />
+        ))}
       </div>
 
       {/* 카드 한도 */}
@@ -1128,6 +1066,90 @@ function AnalyticsPage() {
 // ─────────────────────────────────────────────────────────
 // SHARED HELPERS
 // ─────────────────────────────────────────────────────────
+
+// 카드별 소비 현황 행 — hooks를 컴포넌트 최상단에서 사용하기 위해 분리
+function CardSpendingRow({ c, monthExp, store, toast }) {
+  const [editBudgetCard, setEditBudgetCard] = uS(false);
+  const [budgetCardVal,  setBudgetCardVal]  = uS('');
+
+  const autoPays     = (store.state.auto_pays||[]).filter(ap => ap.cardCo===c.co || ap.cardId===c.id);
+  const autoPayTotal = autoPays.reduce((s,ap) => s+ap.amount, 0);
+  const cardBudgetAmt= (store.state.cardMonthlyBudgets||{})[c.id] || c.limit || 1000000;
+  const spent        = monthExp.filter(e => e.card===c.co).reduce((s,e) => s+e.amount, 0);
+  const remaining    = cardBudgetAmt - autoPayTotal - spent;
+  const autoPct      = Math.min(autoPayTotal / cardBudgetAmt * 100, 100);
+  const spentPct     = Math.min(spent / cardBudgetAmt * 100, 100 - autoPct);
+  const isOver       = remaining < 0;
+
+  return (
+    <div style={{marginBottom:14, paddingBottom:14, borderBottom:'1px solid var(--line)'}}>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6, flexWrap:'wrap', gap:6}}>
+        <div style={{display:'flex', alignItems:'center', gap:8}}>
+          <span style={{fontWeight:600, fontSize:13.5}}>{c.co}</span>
+          <span style={{fontSize:11.5, color:'var(--ink-3)'}}>{c.name}</span>
+        </div>
+        <div style={{display:'flex', alignItems:'center', gap:8}}>
+          {editBudgetCard ? (
+            <div style={{display:'flex', gap:5}}>
+              <input type="number" value={budgetCardVal} onChange={e=>setBudgetCardVal(e.target.value)}
+                placeholder="카드예산"
+                style={{width:90, padding:'4px 8px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:12, fontFamily:'var(--mono)', background:'var(--bg)'}} />
+              <button className="btn btn-primary btn-sm" onClick={()=>{
+                const v=parseInt(budgetCardVal);
+                if(!isNaN(v)){store.setCardMonthlyBudget(c.id,v);toast('예산 설정됨');}
+                setEditBudgetCard(false);
+              }}>저장</button>
+              <button className="btn btn-sm" onClick={()=>setEditBudgetCard(false)}>✕</button>
+            </div>
+          ) : (
+            <button className="btn btn-sm" style={{fontSize:11}} onClick={()=>{setBudgetCardVal(String(cardBudgetAmt));setEditBudgetCard(true);}}>
+              예산 {fmtKRW(cardBudgetAmt,{compact:true})}
+            </button>
+          )}
+          <span style={{fontFamily:'var(--mono)', fontSize:12, fontWeight:700, color:isOver?'var(--negative)':'var(--positive)'}}>
+            {isOver ? '초과 '+fmtKRW(Math.abs(remaining)) : '잔여 '+fmtKRW(remaining)}
+          </span>
+        </div>
+      </div>
+
+      {/* 3단 막대: 보라(자동결제) + 주황(실사용) + 남은 여유 */}
+      <div style={{height:10, background:'var(--paper-2)', borderRadius:5, overflow:'hidden', display:'flex', marginBottom:6}}>
+        {autoPayTotal>0 && <div style={{height:'100%', background:'#8B5CF6', width:autoPct+'%', flexShrink:0}}></div>}
+        {spent>0 && <div style={{height:'100%', background:isOver?'var(--negative)':'var(--accent)', width:spentPct+'%', flexShrink:0}}></div>}
+      </div>
+
+      <div style={{display:'flex', gap:12, fontSize:11.5, color:'var(--ink-3)', flexWrap:'wrap'}}>
+        {autoPayTotal>0 && (
+          <span style={{display:'flex', alignItems:'center', gap:4}}>
+            <span style={{width:8,height:8,borderRadius:2,background:'#8B5CF6',display:'inline-block'}}></span>
+            자동결제 {fmtKRW(autoPayTotal)}
+          </span>
+        )}
+        <span style={{display:'flex', alignItems:'center', gap:4}}>
+          <span style={{width:8,height:8,borderRadius:2,background:'var(--accent)',display:'inline-block'}}></span>
+          사용 {fmtKRW(spent)}
+        </span>
+        <span style={{marginLeft:'auto', fontWeight:600, color:isOver?'var(--negative)':'var(--positive)'}}>
+          {isOver ? '⚠️ 예산 초과' : `잔여 ${fmtKRW(remaining)}`}
+        </span>
+      </div>
+
+      {/* 자동결제 항목 */}
+      {autoPays.length>0 && (
+        <div style={{marginTop:6, padding:'8px 10px', background:'rgba(139,92,246,0.07)', borderRadius:'var(--r-sm)', border:'1px solid rgba(139,92,246,0.18)'}}>
+          <div style={{fontSize:10.5, fontWeight:700, color:'#8B5CF6', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.07em'}}>자동결제 예약</div>
+          {autoPays.map(ap=>(
+            <div key={ap.id} style={{display:'flex', justifyContent:'space-between', fontSize:12, padding:'2px 0', color:'var(--ink-2)'}}>
+              <span>{ap.day}일 {ap.service}</span>
+              <span style={{fontFamily:'var(--mono)', fontWeight:600, color:'#8B5CF6'}}>−{fmtKRW(ap.amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function InlineEditFixed({item,onSave,onCancel}){
   const [name,setName]=uS(item.name); const [meta,setMeta]=uS(item.meta||'');
   const [day,setDay]=uS(item.day||''); const [amount,setAmt]=uS(item.amount||'');
