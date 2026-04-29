@@ -80,7 +80,14 @@ function DashboardPage({ openExpense, openCard }) {
   const cardBill    = ((store.state.monthlyCardBills||{})[ym])||{};
   const cardBillTotal = cardBill.total||0;
   const salary    = ((store.state.monthlySalaries||{})[ym])||store.state.income;
-  const projected = curMinus + salary - pendingFixedTotal - cardBillTotal;
+  const salaryDay = store.state.salaryDay || 25;
+
+  // 30일 예상: 현재 잔액은 이미 받은 급여·완료된 고정비 반영됨
+  // → 아직 안 받은 급여 + 앞으로 나갈 고정비만 계산
+  const remainingSalary  = (isCurMonth && salaryDay > todayDay2) ? salary : 0;
+  const cardPayMaxDay    = store.state.cards.reduce((m,c)=>Math.max(m,c.paymentDay||14),14);
+  const remainingCardBill= (isCurMonth && cardPayMaxDay > todayDay2) ? cardBillTotal : 0;
+  const projected = curMinus + remainingSalary - pendingFixedTotal - remainingCardBill;
   const expTotal  = monthExp.reduce((s,e)=>s+e.amount,0);
   const cardBudget= store.state.cardBudget||1500000;
   const budgetPct = Math.min((expTotal/cardBudget)*100,100);
@@ -178,7 +185,10 @@ function DashboardPage({ openExpense, openCard }) {
           <div style={lbl}>30일 예상 마이너스</div>
           <div style={{...num,color:projected>=curMinus?'var(--positive)':'var(--negative)'}}>{fmtKRW(projected)}</div>
           <div style={{fontSize:11,color:'var(--ink-4)',marginTop:6,lineHeight:1.7}}>
-            현재{fmtKRW(curMinus,{compact:true})} + 급여{fmtKRW(salary,{compact:true})} − 예정고정{fmtKRW(pendingFixedTotal,{compact:true})} − 카드{fmtKRW(cardBillTotal,{compact:true})}
+            현재{fmtKRW(curMinus,{compact:true})}
+            {remainingSalary>0 ? ` + 급여${fmtKRW(remainingSalary,{compact:true})}` : ' (급여수령완료)'}
+            {pendingFixedTotal>0 ? ` − 예정고정${fmtKRW(pendingFixedTotal,{compact:true})}` : ''}
+            {remainingCardBill>0 ? ` − 카드${fmtKRW(remainingCardBill,{compact:true})}` : ' (카드결제완료)'}
           </div>
         </div>
       </div>
@@ -486,7 +496,7 @@ function FlowMapPage() {
 }
 
 // ─────────────────────────────────────────────────────────
-// FIXED COSTS — date-aware: past items = completed (grayed), future = pending
+// FIXED COSTS — Woori-only, per-month independent amounts
 // ─────────────────────────────────────────────────────────
 function FixedCostsPage({ openFixed }) {
   const store = useStore();
@@ -500,155 +510,145 @@ function FixedCostsPage({ openFixed }) {
   const nextYm   = `${nextDate.getFullYear()}-${String(nextDate.getMonth()+1).padStart(2,'0')}`;
   const targetYm = viewMode === 'this' ? ym : nextYm;
   const overrides = (store.state.fixedOverrides || {})[targetYm] || {};
+  const mfa       = (store.state.monthlyFixedAmounts || {})[targetYm] || {}; // month-specific amounts
 
-  // 오늘 날짜 — 이번달 볼 때만 완료/예정 구분
+  // 우리은행 관련 고정비만 표시 (농협, 자동결제 제외)
+  // group이 '농협은행' 이거나 '자동결제' 이면 제외
+  const wooriFixed = uSe(() =>
+    store.state.fixed.filter(f => f.group !== '농협은행' && f.group !== '자동결제'),
+    [store.state.fixed]
+  );
+
   const now = new Date();
   const todayDay = now.getDate();
   const isCurrentMonth = viewMode === 'this' && y === now.getFullYear() && m === now.getMonth()+1;
 
-  // 항목별 상태 계산
+  // 항목의 이달 실적용 금액 (월별 오버라이드 우선)
+  const getAmount = (item) => mfa[item.id] !== undefined ? mfa[item.id] : item.amount;
+
   const getItemStatus = (item) => {
-    if (overrides[item.id] === false) return 'excluded'; // 사용자가 제외
-    if (!isCurrentMonth) return 'active'; // 다음달 or 과거달 = 그냥 active
+    if (overrides[item.id] === false) return 'excluded';
+    if (!isCurrentMonth) return 'active';
     return item.day < todayDay ? 'completed' : 'pending';
   };
 
   const groups = uSe(() => {
     const g = {};
-    store.state.fixed.forEach(f => { if (!g[f.group]) g[f.group] = []; g[f.group].push(f); });
+    wooriFixed.forEach(f => { if (!g[f.group]) g[f.group] = []; g[f.group].push(f); });
     return Object.entries(g).map(([group, items]) => ({ group, items: items.sort((a,b)=>a.day-b.day) }));
-  }, [store.state.fixed]);
+  }, [wooriFixed]);
 
-  const completedItems = store.state.fixed.filter(f => getItemStatus(f) === 'completed');
-  const pendingItems   = store.state.fixed.filter(f => getItemStatus(f) === 'pending');
-  const excludedItems  = store.state.fixed.filter(f => getItemStatus(f) === 'excluded');
-  const completedTotal = completedItems.reduce((s,f) => s+f.amount, 0);
-  const pendingTotal   = pendingItems.reduce((s,f) => s+f.amount, 0);
+  const completedItems = wooriFixed.filter(f => getItemStatus(f) === 'completed');
+  const pendingItems   = wooriFixed.filter(f => getItemStatus(f) === 'pending');
+  const completedTotal = completedItems.reduce((s,f) => s+getAmount(f), 0);
+  const pendingTotal   = pendingItems.reduce((s,f) => s+getAmount(f), 0);
   const activeTotal    = completedTotal + pendingTotal;
-  const total          = store.state.fixed.reduce((s,f) => s+f.amount, 0);
-
-  const statusStyle = (status) => ({
-    completed: { opacity:.55, background:'var(--paper-2)', borderRadius:6 },
-    pending:   { opacity:1 },
-    excluded:  { opacity:.35 },
-    active:    { opacity:1 },
-  }[status] || {});
+  const total          = wooriFixed.reduce((s,f)=>s+getAmount(f), 0);
 
   const statusBadge = (status) => ({
     completed: <span style={{fontSize:10,background:'var(--ink-3)',color:'#fff',borderRadius:4,padding:'1px 6px',marginLeft:6,fontWeight:600}}>완료</span>,
     pending:   <span style={{fontSize:10,background:'var(--accent)',color:'#fff',borderRadius:4,padding:'1px 6px',marginLeft:6,fontWeight:600}}>예정</span>,
-    excluded:  <span style={{fontSize:10,background:'var(--paper-3,#ccc)',color:'var(--ink-3)',borderRadius:4,padding:'1px 6px',marginLeft:6,fontWeight:600}}>제외</span>,
+    excluded:  <span style={{fontSize:10,background:'var(--paper-2)',color:'var(--ink-3)',borderRadius:4,padding:'1px 6px',marginLeft:6,fontWeight:600}}>제외</span>,
     active:    null,
   }[status]);
 
   return (
     <div className="tab-content">
-      <PageHeader eyebrow="Recurring" title="Fixed costs, " titleEm="the spine."
+      <PageHeader eyebrow="우리은행 고정비" title="Fixed costs, " titleEm="Woori."
         right={<button className="btn btn-primary" onClick={openFixed}>+ 항목 추가</button>} />
 
-      {/* 요약 타일 — 완료/예정 구분 */}
+      {/* 요약 타일 */}
       {isCurrentMonth ? (
-        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))', gap:12, marginBottom:16}}>
-          <div style={{padding:'14px 16px', background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-md)', borderTop:'3px solid var(--ink-3)'}}>
-            <div style={{fontSize:10.5, fontWeight:700, color:'var(--ink-3)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6}}>✅ 완료 ({completedItems.length}건)</div>
-            <div style={{fontFamily:'var(--mono)', fontSize:20, fontWeight:700, color:'var(--ink-2)'}}>{fmtKRW(completedTotal)}</div>
-            <div style={{fontSize:11, color:'var(--ink-4)', marginTop:4}}>이미 빠져나간 금액</div>
-          </div>
-          <div style={{padding:'14px 16px', background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-md)', borderTop:'3px solid var(--negative)'}}>
-            <div style={{fontSize:10.5, fontWeight:700, color:'var(--negative)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6}}>⏳ 예정 ({pendingItems.length}건)</div>
-            <div style={{fontFamily:'var(--mono)', fontSize:20, fontWeight:700, color:'var(--negative)'}}>{fmtKRW(pendingTotal)}</div>
-            <div style={{fontSize:11, color:'var(--ink-4)', marginTop:4}}>앞으로 나갈 금액</div>
-          </div>
-          <div style={{padding:'14px 16px', background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-md)', borderTop:'3px solid var(--warm)'}}>
-            <div style={{fontSize:10.5, fontWeight:700, color:'var(--warm)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6}}>📊 이달 합계</div>
-            <div style={{fontFamily:'var(--mono)', fontSize:20, fontWeight:700, color:'var(--warm)'}}>{fmtKRW(activeTotal)}</div>
-            <div style={{fontSize:11, color:'var(--ink-4)', marginTop:4}}>소득의 {Math.round(activeTotal/store.state.income*100)}%</div>
-          </div>
-          <div style={{padding:'14px 16px', background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-md)'}}>
-            <div style={{fontSize:10.5, fontWeight:700, color:'var(--ink-3)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6}}>진행률</div>
-            <div style={{fontFamily:'var(--mono)', fontSize:20, fontWeight:700}}>{activeTotal ? Math.round(completedTotal/activeTotal*100) : 0}%</div>
-            <div style={{marginTop:8, height:5, background:'var(--paper-2)', borderRadius:3, overflow:'hidden'}}>
-              <div style={{height:'100%', background:'var(--ink-3)', borderRadius:3, width: activeTotal?(completedTotal/activeTotal*100)+'%':'0%', transition:'width .5s'}}></div>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))', gap:12, marginBottom:16}}>
+          {[
+            {label:`✅ 완료 (${completedItems.length}건)`, val:completedTotal, sub:'이미 빠져나간 금액', color:'var(--ink-3)'},
+            {label:`⏳ 예정 (${pendingItems.length}건)`,  val:pendingTotal,   sub:'앞으로 나갈 금액',  color:'var(--negative)'},
+            {label:'📊 이달 합계',                         val:activeTotal,    sub:`소득의 ${Math.round(activeTotal/store.state.income*100)}%`, color:'var(--warm)'},
+          ].map((t,i) => (
+            <div key={i} style={{padding:'14px 16px',background:'var(--paper)',border:'1px solid var(--line)',borderRadius:'var(--r-md)',borderTop:`3px solid ${t.color}`}}>
+              <div style={{fontSize:10.5,fontWeight:700,color:t.color,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6}}>{t.label}</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:20,fontWeight:700,color:t.color}}>{fmtKRW(t.val)}</div>
+              <div style={{fontSize:11,color:'var(--ink-4)',marginTop:4}}>{t.sub}</div>
+            </div>
+          ))}
+          <div style={{padding:'14px 16px',background:'var(--paper)',border:'1px solid var(--line)',borderRadius:'var(--r-md)'}}>
+            <div style={{fontSize:10.5,fontWeight:700,color:'var(--ink-3)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6}}>진행률</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:20,fontWeight:700}}>{activeTotal?Math.round(completedTotal/activeTotal*100):0}%</div>
+            <div style={{marginTop:8,height:5,background:'var(--paper-2)',borderRadius:3,overflow:'hidden'}}>
+              <div style={{height:'100%',background:'var(--ink-3)',borderRadius:3,width:activeTotal?(completedTotal/activeTotal*100)+'%':'0%',transition:'width .5s'}}></div>
             </div>
           </div>
         </div>
       ) : (
         <div className="grid-3" style={{marginBottom:14}}>
-          <Tile label="전체 고정비" num={fmtKRW(total)} sub={`${store.state.fixed.length}개`} accent="var(--negative)" />
-          <Tile label="적용액" num={fmtKRW(activeTotal)} sub="토글 반영" accent="var(--warm)" />
-          <Tile label="소득 대비" num={`${Math.round(activeTotal/store.state.income*100)}%`} accent="var(--accent)" />
+          <Tile label="적용 합계" num={fmtKRW(total)} sub={`${wooriFixed.length}개`} accent="var(--negative)" />
+          <Tile label="소득 대비" num={`${Math.round(total/store.state.income*100)}%`} accent="var(--warm)" />
+          <Tile label="항목 수" num={`${wooriFixed.filter(f=>overrides[f.id]!==false).length}개 활성`} accent="var(--accent)" />
         </div>
       )}
 
       {/* 이달/다음달 탭 */}
-      <div style={{display:'flex', gap:8, marginBottom:14, flexWrap:'wrap', alignItems:'center'}}>
+      <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
         <button className={'btn '+(viewMode==='this'?'btn-primary':'')} onClick={()=>setViewMode('this')}>{m}월 이번달</button>
-        <button className={'btn '+(viewMode==='next'?'btn-primary':'')} onClick={()=>setViewMode('next')}>{nextDate.getMonth()+1}월 다음달 미리 설정</button>
-        {isCurrentMonth && <span style={{fontSize:12, color:'var(--ink-3)', marginLeft:4}}>📅 {todayDay}일 기준 · {todayDay}일 이전 항목은 <strong>완료</strong>로 표시</span>}
+        <button className={'btn '+(viewMode==='next'?'btn-primary':'')} onClick={()=>setViewMode('next')}>{nextDate.getMonth()+1}월 다음달</button>
+        {isCurrentMonth && <span style={{fontSize:11.5,color:'var(--ink-3)'}}>📅 {todayDay}일 기준 · 체크박스로 포함/제외 · 금액은 달마다 독립 설정 가능</span>}
       </div>
-      {viewMode==='next' && <div style={{background:'var(--accent-soft)', border:'1px solid var(--accent-line)', borderRadius:'var(--r-md)', padding:'10px 14px', marginBottom:12, fontSize:12.5, color:'var(--ink-2)'}}>💡 다음달 고정비를 미리 조정합니다. 체크 해제 시 다음달 제외.</div>}
+      {viewMode==='next'&&<div style={{background:'var(--accent-soft)',border:'1px solid var(--accent-line)',borderRadius:'var(--r-md)',padding:'10px 14px',marginBottom:12,fontSize:12.5,color:'var(--ink-2)'}}>💡 다음달 고정비를 미리 조정합니다. 금액 수정 시 다음달에만 적용됩니다.</div>}
 
-      {/* 그룹별 목록 */}
       {groups.map(g => {
-        const gItems = g.items;
-        const gCompleted = gItems.filter(f=>getItemStatus(f)==='completed').reduce((s,f)=>s+f.amount,0);
-        const gPending   = gItems.filter(f=>getItemStatus(f)==='pending').reduce((s,f)=>s+f.amount,0);
-        const gActive    = gItems.filter(f=>getItemStatus(f)!=='excluded').reduce((s,f)=>s+f.amount,0);
+        const gActive = g.items.reduce((s,f)=>s+(overrides[f.id]!==false?getAmount(f):0), 0);
         return (
-          <div key={g.group} className="card" style={{marginBottom:14, padding:0, overflow:'hidden'}}>
-            <div className="between" style={{padding:'14px 20px', background:'var(--paper-2)', borderBottom:'1px solid var(--line)'}}>
+          <div key={g.group} className="card" style={{marginBottom:14,padding:0,overflow:'hidden'}}>
+            <div className="between" style={{padding:'14px 20px',background:'var(--paper-2)',borderBottom:'1px solid var(--line)'}}>
               <div>
-                <div className="card-title">{g.group}</div>
-                {isCurrentMonth && (
-                  <div style={{fontSize:11.5, color:'var(--ink-3)', marginTop:3}}>
-                    완료 {fmtKRW(gCompleted, {compact:true})} · 예정 {fmtKRW(gPending, {compact:true})}
-                  </div>
-                )}
+                <div className="card-title">🏦 {g.group}</div>
+                {isCurrentMonth && <div style={{fontSize:11.5,color:'var(--ink-3)',marginTop:2}}>
+                  완료 {fmtKRW(g.items.filter(f=>getItemStatus(f)==='completed').reduce((s,f)=>s+getAmount(f),0),{compact:true})} ·
+                  예정 {fmtKRW(g.items.filter(f=>getItemStatus(f)==='pending').reduce((s,f)=>s+getAmount(f),0),{compact:true})}
+                </div>}
               </div>
-              <div className="serif" style={{fontSize:20, fontWeight:500}}>{fmtKRW(gActive)}</div>
+              <div className="serif" style={{fontSize:20,fontWeight:500}}>{fmtKRW(gActive)}</div>
             </div>
             <div style={{padding:'4px 20px'}}>
-              {gItems.map(item => {
+              {g.items.map(item => {
                 const status = getItemStatus(item);
-                const isDone  = status === 'completed';
-                const isExcluded = status === 'excluded';
+                const isDone = status === 'completed';
+                const isExcl = status === 'excluded';
+                const amt    = getAmount(item);
+                const hasCustomAmt = mfa[item.id] !== undefined;
                 return (
-                  <div key={item.id} style={{...statusStyle(status)}}>
+                  <div key={item.id} style={{opacity:isExcl?.35:isDone?.58:1, borderRadius:6, transition:'opacity .2s'}}>
                     <div className="row" style={{padding:'10px 0'}}>
-                      {/* 체크박스 — 토글로 제외/포함 (완료 항목도 여전히 토글 가능) */}
-                      <label style={{display:'flex', alignItems:'center', gap:6, cursor:'pointer', flexShrink:0}}>
-                        <input type="checkbox"
-                          checked={overrides[item.id] !== false}
-                          onChange={e => store.setFixedOverride(targetYm, item.id, e.target.checked)}
-                          style={{width:14, height:14, accentColor:'var(--accent)', cursor:'pointer'}} />
+                      <label style={{display:'flex',alignItems:'center',cursor:'pointer',flexShrink:0}}>
+                        <input type="checkbox" checked={overrides[item.id]!==false}
+                          onChange={e=>store.setFixedOverride(targetYm,item.id,e.target.checked)}
+                          style={{width:14,height:14,accentColor:'var(--accent)',cursor:'pointer'}} />
                       </label>
-                      <div className={'day-chip '+(isDone?'':'out')} style={{
-                        background: isDone?'var(--ink-3)':'', color: isDone?'#fff':'',
-                        minWidth:28, textAlign:'center'
-                      }}>{item.day}</div>
+                      <div className={'day-chip '+(isDone?'':'out')} style={{background:isDone?'var(--ink-3)':'',color:isDone?'#fff':'',marginLeft:8}}>{item.day}</div>
                       <div className="row-body" style={{flex:1}}>
-                        <div style={{display:'flex', alignItems:'center', flexWrap:'wrap', gap:4}}>
-                          <span className="row-title" style={{textDecoration:isExcluded?'line-through':'none'}}>{item.name}</span>
+                        <div style={{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
+                          <span className="row-title" style={{textDecoration:isExcl?'line-through':'none'}}>{item.name}</span>
                           {statusBadge(status)}
+                          {hasCustomAmt && <span style={{fontSize:10,background:'#5B6CB5',color:'#fff',borderRadius:4,padding:'1px 5px',fontWeight:600}}>이달수정</span>}
                         </div>
                         <div className="row-meta">{item.meta}</div>
                       </div>
-                      <div className="row-amt mono" style={{
-                        color: isDone?'var(--ink-3)':isExcluded?'var(--ink-4)':'var(--negative)',
-                        textDecoration: isExcluded?'line-through':'none'
-                      }}>
-                        {isExcluded ? fmtKRW(item.amount) : (isDone ? '−'+fmtKRW(item.amount) : '−'+fmtKRW(item.amount))}
+                      <div className="mono fw6" style={{color:isDone?'var(--ink-3)':isExcl?'var(--ink-4)':'var(--negative)',textDecoration:isExcl?'line-through':'none',fontSize:14}}>
+                        {isExcl?fmtKRW(amt):'−'+fmtKRW(amt)}
                       </div>
-                      {/* 수정 버튼 — 완료된 항목도 수정 가능 */}
-                      <button className="icon-btn" style={{width:28,height:28}} title="수정" onClick={()=>setEditItem(editItem?.id===item.id?null:item)}>
+                      <button className="icon-btn" style={{width:28,height:28}} onClick={()=>setEditItem(editItem?.id===item.id?null:item)}>
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                       </button>
-                      <button className="icon-btn" style={{width:28,height:28}} title="삭제" onClick={()=>{store.deleteFixed(item.id);toast('삭제됨');}}>
+                      <button className="icon-btn" style={{width:28,height:28}} onClick={()=>{store.deleteFixed(item.id);toast('삭제됨');}}>
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
                       </button>
                     </div>
                     {editItem?.id === item.id && (
-                      <InlineEditFixed item={item} onSave={(p)=>{store.updateFixed(item.id,p);toast('수정됨');setEditItem(null);}} onCancel={()=>setEditItem(null)} />
+                      <InlineEditFixedIndep item={item} ym={targetYm} mfa={mfa}
+                        onSaveGlobal={(p)=>{store.updateFixed(item.id,p);toast('전체 수정됨');setEditItem(null);}}
+                        onSaveMonth={(amt)=>{store.setMonthlyFixedAmount(targetYm,item.id,amt);toast(`${targetYm.split('-')[1]}월만 수정됨`);setEditItem(null);}}
+                        onResetMonth={()=>{store.setMonthlyFixedAmount(targetYm,item.id,null);toast('이달 금액 초기화됨');setEditItem(null);}}
+                        onCancel={()=>setEditItem(null)} />
                     )}
                   </div>
                 );
@@ -660,7 +660,6 @@ function FixedCostsPage({ openFixed }) {
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // TIMELINE — hover tooltip + editable right panel
 // ─────────────────────────────────────────────────────────
@@ -902,26 +901,9 @@ function CreditCardsPage({ openCard }) {
         ))}
       </div>
       {selectedCard&&<CardDetailPanel c={selectedCard} store={store} toast={toast} onClose={()=>setSelectedCard(null)} />}
-      <div className="card">
-        <div className="card-head"><div className="card-title">결제 <em>예정</em></div></div>
-        {store.state.cards.map(c=>{
-          const pct=c.limit?(c.used/c.limit)*100:0;
-          return (
-            <div key={c.id}>
-              <div className="row">
-                <div className="cat-mark" style={{background:'var(--paper-2)',color:'var(--ink)',fontFamily:'var(--mono)',fontSize:11}}>{c.co.slice(0,2)}</div>
-                <div className="row-body" style={{maxWidth:200}}><div className="row-title">{c.co}</div><div className="row-meta">{c.name} · {c.paymentDay}일</div></div>
-                <div style={{flex:1}}><div className="bar"><div className="bar-fill" style={{width:pct+'%',background:'var(--accent)'}}></div></div></div>
-                <div className="mono fw6 text-sm" style={{minWidth:110,textAlign:'right'}}>{fmtKRW(c.used)} / {fmtKRW(c.limit,{compact:true})}</div>
-                <button className="icon-btn" style={{width:28,height:28}} onClick={()=>setEditCardId(editCardId===c.id?null:c.id)}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                </button>
-              </div>
-              {editCardId===c.id&&<InlineCardEdit c={c} onSave={(p)=>{store.updateCard(c.id,p);toast('수정됨');setEditCardId(null);}} onCancel={()=>setEditCardId(null)} />}
-            </div>
-          );
-        })}
-      </div>
+
+      {/* 자동결제 관리 — 이달/다음달 탭 */}
+      <AutoPaySection store={store} toast={toast} y={store.state.month.y} m={store.state.month.m} />
     </div>
   );
 }
@@ -1015,7 +997,170 @@ function AnalyticsPage() {
 // SHARED HELPERS
 // ─────────────────────────────────────────────────────────
 
-// 카드별 소비 현황 행 — hooks를 컴포넌트 최상단에서 사용하기 위해 분리
+// 고정비 월별 독립 수정 (전체수정 vs 이달만수정 선택 가능)
+function InlineEditFixedIndep({ item, ym, mfa, onSaveGlobal, onSaveMonth, onResetMonth, onCancel }) {
+  const [name,    setName]    = uS(item.name);
+  const [meta,    setMeta]    = uS(item.meta||'');
+  const [day,     setDay]     = uS(item.day||'');
+  const [amtGlobal, setAmtGlobal] = uS(item.amount||'');
+  const [amtMonth,  setAmtMonth]  = uS(mfa[item.id]??item.amount);
+  const [group,   setGroup]   = uS(item.group||'기타');
+  const [mode,    setMode]    = uS('month'); // 'month' | 'global'
+  const st = {padding:'7px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:12.5,background:'var(--bg)',width:'100%'};
+  const monthName = ym.split('-')[1];
+  return (
+    <div style={{padding:'12px 14px',background:'var(--accent-soft)',borderRadius:'var(--r-sm)',margin:'4px 0'}}>
+      <div style={{display:'flex',gap:6,marginBottom:10}}>
+        <button className={'btn btn-sm '+(mode==='month'?'btn-primary':'')} onClick={()=>setMode('month')}>{monthName}월만 수정</button>
+        <button className={'btn btn-sm '+(mode==='global'?'btn-primary':'')} onClick={()=>setMode('global')}>항목 자체 수정 (전체)</button>
+        {mfa[item.id]!==undefined && <button className="btn btn-sm" onClick={onResetMonth} style={{marginLeft:'auto'}}>이달 초기화</button>}
+      </div>
+      {mode === 'month' ? (
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          <span style={{fontSize:12,color:'var(--ink-3)'}}>금액 ({monthName}월만)</span>
+          <input type="number" value={amtMonth} onChange={e=>setAmtMonth(e.target.value)} style={{...st,width:130,fontFamily:'var(--mono)'}} />
+          <button className="btn btn-primary btn-sm" onClick={()=>onSaveMonth(+amtMonth)}>저장</button>
+          <button className="btn btn-sm" onClick={onCancel}>취소</button>
+        </div>
+      ) : (
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:6,alignItems:'end'}}>
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>항목명</div><input value={name} onChange={e=>setName(e.target.value)} style={st}/></div>
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>메모</div><input value={meta} onChange={e=>setMeta(e.target.value)} style={st}/></div>
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>일</div><input type="number" min="1" max="31" value={day} onChange={e=>setDay(e.target.value)} style={st}/></div>
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>금액 (기본)</div><input type="number" value={amtGlobal} onChange={e=>setAmtGlobal(e.target.value)} style={{...st,fontFamily:'var(--mono)'}}/></div>
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>그룹</div><input value={group} onChange={e=>setGroup(e.target.value)} style={st}/></div>
+          <div style={{display:'flex',gap:5,alignItems:'flex-end'}}>
+            <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={()=>onSaveGlobal({name,meta,day:+day,amount:+amtGlobal,group})}>전체저장</button>
+            <button className="btn btn-sm" style={{flex:1}} onClick={onCancel}>취소</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 신용카드 자동결제 관리 섹션 (이달/다음달 탭)
+function AutoPaySection({ store, toast, y, m }) {
+  const now = new Date();
+  const ym  = `${y}-${String(m).padStart(2,'0')}`;
+  const nextDate = new Date(y, m, 1);
+  const nextYm   = `${nextDate.getFullYear()}-${String(nextDate.getMonth()+1).padStart(2,'0')}`;
+  const [viewMode, setViewMode] = uS('this');
+  const [adding,   setAdding]   = uS(false);
+  const [editApId, setEditApId] = uS(null);
+  const [newAp,    setNewAp]    = uS({cardCo:'', service:'', amount:'', day:''});
+  const targetYm = viewMode === 'this' ? ym : nextYm;
+  const todayDay = now.getDate();
+  const isCurMonth = viewMode === 'this' && y === now.getFullYear() && m === now.getMonth()+1;
+
+  const allAPs = store.state.auto_pays || [];
+  const totalAP = allAPs.reduce((s,ap)=>s+ap.amount,0);
+  const st = {padding:'7px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:12.5,background:'var(--bg)'};
+
+  // 카드사별 그룹
+  const byCard = {};
+  allAPs.forEach(ap => { if(!byCard[ap.cardCo]) byCard[ap.cardCo]=[]; byCard[ap.cardCo].push(ap); });
+
+  return (
+    <div className="card" style={{marginTop:16}}>
+      <div className="card-head">
+        <div>
+          <div className="card-title">자동결제 <em>관리</em></div>
+          <div className="card-sub">카드 자동이체 항목 · 합계 {fmtKRW(totalAP)}/월</div>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button className={'btn btn-sm '+(viewMode==='this'?'btn-primary':'')} onClick={()=>setViewMode('this')}>{m}월</button>
+          <button className={'btn btn-sm '+(viewMode==='next'?'btn-primary':'')} onClick={()=>setViewMode('next')}>{nextDate.getMonth()+1}월</button>
+          <button className="btn btn-sm btn-primary" onClick={()=>setAdding(true)}>+ 추가</button>
+        </div>
+      </div>
+
+      {adding && (
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:8,padding:'12px 14px',background:'var(--accent-soft)',borderRadius:'var(--r-sm)',marginBottom:12}}>
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>카드사</div>
+            <select value={newAp.cardCo} onChange={e=>setNewAp(p=>({...p,cardCo:e.target.value}))} style={{...st,width:'100%',cursor:'pointer'}}>
+              <option value="">선택</option>
+              {store.state.cards.map(c=><option key={c.id} value={c.co}>{c.co}</option>)}
+            </select>
+          </div>
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>서비스명</div><input value={newAp.service} onChange={e=>setNewAp(p=>({...p,service:e.target.value}))} placeholder="넷플릭스" style={{...st,width:'100%'}}/></div>
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>금액</div><input type="number" value={newAp.amount} onChange={e=>setNewAp(p=>({...p,amount:e.target.value}))} style={{...st,width:'100%',fontFamily:'var(--mono)'}}/></div>
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>결제일</div><input type="number" min="1" max="31" value={newAp.day} onChange={e=>setNewAp(p=>({...p,day:e.target.value}))} style={{...st,width:'100%'}}/></div>
+          <div style={{display:'flex',gap:5,alignItems:'flex-end'}}>
+            <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={()=>{
+              if(!newAp.cardCo||!newAp.service) return;
+              const cardObj = store.state.cards.find(c=>c.co===newAp.cardCo);
+              store.addAutoPay({cardId:cardObj?.id||'',cardCo:newAp.cardCo,service:newAp.service,amount:+newAp.amount,day:+newAp.day});
+              toast('자동결제 추가됨');
+              setNewAp({cardCo:'',service:'',amount:'',day:''});
+              setAdding(false);
+            }}>추가</button>
+            <button className="btn btn-sm" style={{flex:1}} onClick={()=>setAdding(false)}>취소</button>
+          </div>
+        </div>
+      )}
+
+      {Object.entries(byCard).length === 0 && !adding && (
+        <div style={{padding:'24px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>등록된 자동결제 없음</div>
+      )}
+
+      {Object.entries(byCard).map(([co, aps]) => {
+        const coTotal = aps.reduce((s,ap)=>s+ap.amount,0);
+        return (
+          <div key={co} style={{marginBottom:14,paddingBottom:14,borderBottom:'1px solid var(--line)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+              <div style={{fontWeight:700,fontSize:13.5,color:'#8B5CF6'}}>{co}</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:'#8B5CF6'}}>−{fmtKRW(coTotal)}/월</div>
+            </div>
+            {aps.sort((a,b)=>a.day-b.day).map(ap => {
+              const isDone = isCurMonth && ap.day < todayDay;
+              return (
+                <div key={ap.id}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',opacity:isDone?.6:1}}>
+                    <div className={'day-chip '+(isDone?'':'out')} style={{background:isDone?'var(--ink-3)':'',color:isDone?'#fff':'',width:28,textAlign:'center',fontSize:11}}>{ap.day}</div>
+                    <div style={{flex:1,fontSize:13}}>{ap.service}</div>
+                    {isDone && <span style={{fontSize:10,background:'var(--ink-3)',color:'#fff',borderRadius:4,padding:'1px 5px',fontWeight:600}}>완료</span>}
+                    <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:'#8B5CF6'}}>−{fmtKRW(ap.amount)}</div>
+                    <button className="icon-btn" style={{width:26,height:26}} onClick={()=>setEditApId(editApId===ap.id?null:ap.id)}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                    </button>
+                    <button className="icon-btn" style={{width:26,height:26}} onClick={()=>{store.deleteAutoPay(ap.id);toast('삭제됨');}}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                    </button>
+                  </div>
+                  {editApId === ap.id && (
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 80px 70px auto auto',gap:6,padding:'8px 12px',background:'var(--accent-soft)',borderRadius:'var(--r-sm)',margin:'4px 0',alignItems:'end'}}>
+                      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>서비스</div><input defaultValue={ap.service} id={`ap-svc-${ap.id}`} style={{...st,width:'100%'}}/></div>
+                      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>카드사</div>
+                        <select defaultValue={ap.cardCo} id={`ap-co-${ap.id}`} style={{...st,width:'100%',cursor:'pointer'}}>
+                          {store.state.cards.map(c=><option key={c.id} value={c.co}>{c.co}</option>)}
+                        </select>
+                      </div>
+                      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>금액</div><input type="number" defaultValue={ap.amount} id={`ap-amt-${ap.id}`} style={{...st,width:'100%',fontFamily:'var(--mono)'}}/></div>
+                      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>결제일</div><input type="number" min="1" max="31" defaultValue={ap.day} id={`ap-day-${ap.id}`} style={{...st,width:'100%'}}/></div>
+                      <button className="btn btn-primary btn-sm" onClick={()=>{
+                        const co2 = document.getElementById(`ap-co-${ap.id}`)?.value||ap.cardCo;
+                        const cardObj = store.state.cards.find(c=>c.co===co2);
+                        store.updateAutoPay(ap.id,{
+                          service: document.getElementById(`ap-svc-${ap.id}`)?.value||ap.service,
+                          cardCo: co2, cardId: cardObj?.id||ap.cardId,
+                          amount: +document.getElementById(`ap-amt-${ap.id}`)?.value||ap.amount,
+                          day:    +document.getElementById(`ap-day-${ap.id}`)?.value||ap.day,
+                        });
+                        toast('수정됨'); setEditApId(null);
+                      }}>저장</button>
+                      <button className="btn btn-sm" onClick={()=>setEditApId(null)}>취소</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 function CardSpendingRow({ c, monthExp, store, toast }) {
   const [editBudgetCard, setEditBudgetCard] = uS(false);
   const [budgetCardVal,  setBudgetCardVal]  = uS('');
@@ -1124,24 +1269,30 @@ function ExpenseRow({e,toneMap,onDelete,onUpdate,store,showDate}){
   const [cat,setCat]=uS(e.cat); const [card,setCard]=uS(e.card);
   const inpSt={padding:'6px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:12.5,background:'var(--bg)',fontFamily:'var(--sans)'};
   const def=getCatDef(cat);
+  const tone=toneMap[def.tone]||'var(--accent)';
   return (
     <div>
-      <div className="expense-row">
-        <div className="cat-mark" style={{background:'color-mix(in oklab, '+(toneMap[def.tone]||'var(--accent)')+' 12%, transparent)',color:toneMap[def.tone]||'var(--accent)'}}>{def.mark}</div>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderBottom:'1px solid var(--line)'}}>
+        {/* 카테고리 마크 */}
+        <div style={{width:34,height:34,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',background:'color-mix(in oklab, '+tone+' 12%, transparent)',color:tone,fontWeight:700,fontSize:13,flexShrink:0}}>{def.mark}</div>
+        {/* 내용 */}
         <div style={{flex:1,minWidth:0}}>
-          <div className="row-title">{e.title}</div>
-          <div style={{display:'flex',gap:5,marginTop:4,flexWrap:'wrap'}}>
-            <span className="chip">{e.cat}</span><span className="chip">{e.card}</span>
-            {showDate&&<span className="chip" style={{color:'var(--ink-4)'}}>{e.date.slice(5)}</span>}
+          <div style={{fontSize:13.5,fontWeight:600,color:'var(--ink)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.title}</div>
+          <div style={{display:'flex',gap:5,marginTop:3,alignItems:'center',flexWrap:'wrap'}}>
+            <span style={{fontSize:11,background:'var(--paper-2)',padding:'1px 6px',borderRadius:4,color:'var(--ink-3)'}}>{e.cat}</span>
+            <span style={{fontSize:11,color:'var(--ink-4)'}}>{e.card}</span>
+            {showDate&&<span style={{fontSize:11,color:'var(--ink-4)'}}>{e.date.slice(5)}</span>}
           </div>
         </div>
-        <button className="icon-btn" style={{width:28,height:28}} onClick={()=>setEditing(!editing)}>
+        {/* 금액 — 크고 bold */}
+        <div style={{fontFamily:'var(--mono)',fontSize:17,fontWeight:800,color:'var(--negative)',flexShrink:0}}>−{fmtKRW(e.amount)}</div>
+        {/* 수정/삭제 */}
+        <button className="icon-btn" style={{width:26,height:26,flexShrink:0}} onClick={()=>setEditing(!editing)}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
         </button>
-        <button className="icon-btn" style={{width:28,height:28}} onClick={onDelete}>
+        <button className="icon-btn" style={{width:26,height:26,flexShrink:0}} onClick={onDelete}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
-        <div className="mono fw6 neg">−{fmtKRW(e.amount)}</div>
       </div>
       {editing&&(
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:8,padding:'10px 12px',background:'var(--accent-soft)',borderRadius:'var(--r-sm)',margin:'4px 0'}}>
