@@ -661,58 +661,6 @@ function FixedCostsPage({ openFixed }) {
   );
 }
 
-  return (
-    <div className="tab-content">
-      <PageHeader eyebrow="Recurring" title="Fixed costs, " titleEm="the spine." right={<button className="btn btn-primary" onClick={openFixed}>+ 항목 추가</button>} />
-      <div className="grid-3" style={{marginBottom:14}}>
-        <Tile label="전체 고정비" num={fmtKRW(total)} sub={`${store.state.fixed.length}개`} accent="var(--negative)" />
-        <Tile label={`${viewMode==='this'?m:nextDate.getMonth()+1}월 적용액`} num={fmtKRW(activeTotal)} sub="토글 반영" accent="var(--warm)" />
-        <Tile label="소득 대비" num={`${Math.round(activeTotal/store.state.income*100)}%`} accent="var(--accent)" />
-      </div>
-      <div style={{display:'flex',gap:8,marginBottom:14}}>
-        <button className={'btn '+(viewMode==='this'?'btn-primary':'')} onClick={()=>setViewMode('this')}>{m}월 (이번달)</button>
-        <button className={'btn '+(viewMode==='next'?'btn-primary':'')} onClick={()=>setViewMode('next')}>{nextDate.getMonth()+1}월 (다음달)</button>
-      </div>
-      {viewMode==='next'&&<div style={{background:'var(--accent-soft)',border:'1px solid var(--accent-line)',borderRadius:'var(--r-md)',padding:'10px 14px',marginBottom:12,fontSize:12.5,color:'var(--ink-2)'}}>💡 다음달 고정비를 미리 조정합니다. 체크 해제 시 다음달 제외.</div>}
-      {groups.map(g=>{
-        const groupTotal=g.items.reduce((s,f)=>s+(overrides[f.id]!==false?f.amount:0),0);
-        return (
-          <div key={g.group} className="card" style={{marginBottom:14,padding:0,overflow:'hidden'}}>
-            <div className="between" style={{padding:'16px 22px',background:'var(--paper-2)',borderBottom:'1px solid var(--line)'}}>
-              <div><div className="card-title">{g.group}</div><div className="card-sub">{g.items.length}건</div></div>
-              <div className="serif" style={{fontSize:20,fontWeight:500}}>{fmtKRW(groupTotal)}</div>
-            </div>
-            <div style={{padding:'4px 22px'}}>
-              {g.items.map(item=>{
-                const isActive=overrides[item.id]!==false;
-                return (
-                  <div key={item.id}>
-                    <div className="row">
-                      <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',marginRight:4}}>
-                        <input type="checkbox" checked={isActive} onChange={e=>store.setFixedOverride(targetYm,item.id,e.target.checked)} style={{width:14,height:14,accentColor:'var(--accent)'}} />
-                      </label>
-                      <div className="day-chip" style={{opacity:isActive?1:.4}}>{item.day}</div>
-                      <div className="row-body" style={{opacity:isActive?1:.4}}><div className="row-title">{item.name}</div><div className="row-meta">{item.meta}</div></div>
-                      <div className="row-amt out mono" style={{opacity:isActive?1:.4}}>{isActive?'−'+fmtKRW(item.amount):<s>{fmtKRW(item.amount)}</s>}</div>
-                      <button className="icon-btn" style={{width:28,height:28}} onClick={()=>setEditItem(editItem?.id===item.id?null:item)}>
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                      </button>
-                      <button className="icon-btn" style={{width:28,height:28}} onClick={()=>{store.deleteFixed(item.id);toast('삭제됨');}}>
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
-                      </button>
-                    </div>
-                    {editItem?.id===item.id&&<InlineEditFixed item={item} onSave={(p)=>{store.updateFixed(item.id,p);toast('수정됨');setEditItem(null);}} onCancel={()=>setEditItem(null)} />}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ─────────────────────────────────────────────────────────
 // TIMELINE — hover tooltip + editable right panel
 // ─────────────────────────────────────────────────────────
