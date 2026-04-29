@@ -1,585 +1,739 @@
-// Reactive pages — read from store, support adding/deleting
-const { useState: uS, useMemo: uM } = React;
+// All page components — Gravo Finance
+const { useState: uS, useEffect: uM, useMemo: uSe } = React;
 
-const MONTH_NAMES = ['','1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
-
+// ── helpers ──────────────────────────────────────────────
 function useMonthExpenses() {
   const store = useStore();
   const { y, m } = store.state.month;
-  const prefix = `${y}-${String(m).padStart(2,'0')}`;
-  return store.state.expenses.filter(e => e.date.startsWith(prefix));
+  const ym = `${y}-${String(m).padStart(2,'0')}`;
+  return uSe(() => store.state.expenses.filter(e => e.date.startsWith(ym)), [store.state.expenses, ym]);
 }
 
 function MonthSwitchLive() {
   const store = useStore();
   const { y, m } = store.state.month;
-  const prev = () => { let nm = m-1, ny = y; if (nm < 1) { nm = 12; ny--; } store.setMonth(ny, nm); };
-  const next = () => { let nm = m+1, ny = y; if (nm > 12) { nm = 1; ny++; } store.setMonth(ny, nm); };
+  const now = new Date();
+  const isCurrent = y === now.getFullYear() && m === now.getMonth()+1;
+  const prev = () => { const d = new Date(y,m-2,1); store.setMonth(d.getFullYear(),d.getMonth()+1); };
+  const next = () => { const d = new Date(y,m,1); store.setMonth(d.getFullYear(),d.getMonth()+1); };
   return (
     <div className="month-switch">
       <button onClick={prev}>‹</button>
-      <span className="label">{y}년 {MONTH_NAMES[m]}</span>
-      <button onClick={next}>›</button>
+      <span className="label">{y}년 {m}월</span>
+      <button onClick={next} disabled={isCurrent} style={{opacity:isCurrent?.4:1}}>›</button>
     </div>
   );
 }
 
+const CAT_DEFS = [
+  {cat:'식사',  mark:'식', tone:'indigo', label:'🍽️ 식사'},
+  {cat:'카페',  mark:'카', tone:'warm',   label:'☕ 카페'},
+  {cat:'배달',  mark:'배', tone:'warm',   label:'📦 배달음식'},
+  {cat:'주류',  mark:'술', tone:'neg',    label:'🍺 주류·술'},
+  {cat:'쇼핑',  mark:'쇼', tone:'accent', label:'🛍️ 쇼핑'},
+  {cat:'마트',  mark:'마', tone:'pos',    label:'🛒 마트·식료품'},
+  {cat:'교통',  mark:'교', tone:'neg',    label:'🚕 교통·택시'},
+  {cat:'의료',  mark:'의', tone:'pos',    label:'🏥 의료·약국'},
+  {cat:'건강',  mark:'건', tone:'pos',    label:'💪 운동·건강'},
+  {cat:'미용',  mark:'미', tone:'warm',   label:'💇 미용·뷰티'},
+  {cat:'여행',  mark:'여', tone:'accent', label:'✈️ 여행'},
+  {cat:'문화',  mark:'문', tone:'accent', label:'🎭 문화·엔터'},
+  {cat:'교육',  mark:'공', tone:'indigo', label:'📚 교육·학원'},
+  {cat:'육아',  mark:'육', tone:'pos',    label:'👶 육아·아이'},
+  {cat:'반려',  mark:'펫', tone:'warm',   label:'🐾 반려동물'},
+  {cat:'구독',  mark:'구', tone:'indigo', label:'📱 구독·앱'},
+  {cat:'통신',  mark:'통', tone:'indigo', label:'📡 통신비'},
+  {cat:'공과금',mark:'공', tone:'neg',    label:'⚡ 공과금'},
+  {cat:'보험',  mark:'보', tone:'neg',    label:'🛡️ 보험'},
+  {cat:'경조사',mark:'경', tone:'accent', label:'🎁 경조사·선물'},
+  {cat:'기타',  mark:'기', tone:'warm',   label:'📦 기타'},
+];
+function getCatDef(cat){ return CAT_DEFS.find(c=>c.cat===cat)||CAT_DEFS[CAT_DEFS.length-1]; }
+
 // ─────────────────────────────────────────────────────────
-// DASHBOARD
+// DASHBOARD — 4-box Woori-centric
 // ─────────────────────────────────────────────────────────
 function DashboardPage({ openExpense, openCard }) {
   const store = useStore();
   const toast = useToast();
-  const [editCardDash, setEditCardDash] = uS(null);
+  const { y, m } = store.state.month;
+  const ym = `${y}-${String(m).padStart(2,'0')}`;
   const monthExp = useMonthExpenses();
-  const totalAssets = store.state.accounts.reduce((s, a) => s + Math.max(a.balance, 0), 0);
-  const totalDebt = -store.state.accounts.reduce((s, a) => s + Math.min(a.balance, 0), 0);
-  const netWorth = totalAssets - totalDebt;
-  const monthIn = store.state.income;
-  const fixedTotal = store.state.fixed.reduce((s,f) => s + f.amount, 0);
-  const expTotal = monthExp.reduce((s,e) => s + e.amount, 0);
-  const monthOut = fixedTotal + expTotal;
-  const monthNet = monthIn - monthOut;
-  const cards = store.state.cards;
+  const woori    = store.state.accounts.find(a=>a.id==='woori')||store.state.accounts[0];
+  const curMinus = woori?.balance||0;
+  const overrides = (store.state.fixedOverrides||{})[ym]||{};
+  const activeFixed = store.state.fixed.filter(f=>overrides[f.id]!==false);
+  const fixedTotal  = activeFixed.reduce((s,f)=>s+f.amount,0);
+  const cardBill    = ((store.state.monthlyCardBills||{})[ym])||{};
+  const cardBillTotal = cardBill.total||0;
+  const salary    = ((store.state.monthlySalaries||{})[ym])||store.state.income;
+  const projected = curMinus + salary - fixedTotal - cardBillTotal;
+  const expTotal  = monthExp.reduce((s,e)=>s+e.amount,0);
+  const cardBudget= store.state.cardBudget||1500000;
+  const budgetPct = Math.min((expTotal/cardBudget)*100,100);
+  const byCard = {};
+  monthExp.forEach(e=>{ byCard[e.card]=(byCard[e.card]||0)+e.amount; });
 
-  // Build category breakdown
-  const catTotals = monthExp.reduce((acc, e) => { acc[e.cat] = (acc[e.cat]||0) + e.amount; return acc; }, {});
-  const catColors = {'식비':'var(--accent)','문화':'var(--indigo)','생활':'var(--positive)','카페':'var(--warm)','교통':'var(--negative)','기타':'var(--ink-4)'};
-  const catSegs = Object.entries(catTotals).map(([l,v]) => ({label:l, value:v, color:catColors[l]||'var(--ink-4)'}));
+  const [editMinus,  setEditMinus]  = uS(false);
+  const [editFixed,  setEditFixed]  = uS(false);
+  const [editCard,   setEditCard]   = uS(false);
+  const [editBudget, setEditBudget] = uS(false);
+  const [minusVal,   setMinusVal]   = uS('');
+  const [budgetVal,  setBudgetVal]  = uS('');
+
+  const box = (color) => ({
+    background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-lg)',
+    padding:'20px 22px', position:'relative', overflow:'visible', borderTop:`3px solid ${color}`
+  });
+  const lbl = {fontSize:11,fontWeight:700,color:'var(--ink-3)',textTransform:'uppercase',letterSpacing:'0.09em',marginBottom:8};
+  const num = {fontFamily:'var(--mono)',fontSize:26,fontWeight:700,letterSpacing:'-0.03em',lineHeight:1};
+  const editBtnEl = (fn) => (
+    <button onClick={fn} style={{position:'absolute',top:12,right:12,background:'transparent',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',padding:'3px 9px',fontSize:11,cursor:'pointer',color:'var(--ink-3)'}}>수정</button>
+  );
 
   return (
     <div className="tab-content">
-      <PageHeader
-        eyebrow={`${store.state.month.y}년 ${store.state.month.m}월`}
-        title="This month, "
-        titleEm={monthNet >= 0 ? 'on track.' : 'needs attention.'}
-        sub={`순자산 ${fmtKRW(netWorth, {compact:true})} · 30일 예상 ${monthNet >= 0 ? '흑자' : '적자'} ${fmtKRW(Math.abs(monthNet), {compact:true})}.`}
-        right={<MonthSwitchLive />}
-      />
+      <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',marginBottom:20,flexWrap:'wrap',gap:8}}>
+        <div style={{fontFamily:'var(--serif)',fontSize:34,fontWeight:500,letterSpacing:'-0.02em',lineHeight:1.1}}>
+          {y}년 <span style={{color:'var(--accent)'}}>{m}월</span>
+          <span style={{fontSize:16,color:'var(--ink-3)',fontFamily:'var(--sans)',fontWeight:400,marginLeft:10}}>재정 현황</span>
+        </div>
+        <MonthSwitchLive />
+      </div>
 
-      <div className="hero-balance">
-        <div className="hero-cell">
-          <div className="hero-label"><span className="hero-label-dot" style={{background:'var(--accent)'}}></span>순자산</div>
-          <div className="hero-num">{fmtKRW(netWorth, {compact:true})}</div>
-          <div className="hero-meta">
-            <span className="delta up">↑ 1.7%</span>
-            <span className="faint">자산 {fmtKRW(totalAssets,{compact:true})} − 부채 {fmtKRW(totalDebt,{compact:true})}</span>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:14,marginBottom:20}}>
+
+        {/* 1. 마이너스 잔액 */}
+        <div style={box('var(--negative)')}>
+          {editBtnEl(()=>{setMinusVal(String(curMinus));setEditMinus(true);})}
+          <div style={lbl}>우리은행 마이너스</div>
+          {editMinus ? (
+            <div style={{display:'flex',gap:6,flexDirection:'column'}}>
+              <input type="number" value={minusVal} onChange={e=>setMinusVal(e.target.value)} style={{padding:'8px 10px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:15,fontFamily:'var(--mono)',background:'var(--bg)'}} />
+              <div style={{display:'flex',gap:6}}>
+                <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={()=>{ const v=parseInt(minusVal); if(!isNaN(v)){store.updateAccount('woori',{balance:v});toast('저장됨');} setEditMinus(false); }}>저장</button>
+                <button className="btn btn-sm" style={{flex:1}} onClick={()=>setEditMinus(false)}>취소</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{...num,color:'var(--negative)'}}>{fmtKRW(curMinus)}</div>
+              <div style={{fontSize:12,color:'var(--ink-4)',marginTop:6}}>한도 {fmtKRW(woori?.limit||150000000,{compact:true})} · {woori?.limit?(Math.abs(curMinus)/woori.limit*100).toFixed(1)+'%':'--'} 사용</div>
+              <div style={{marginTop:10,height:4,background:'var(--paper-2)',borderRadius:2,overflow:'hidden'}}><div style={{height:'100%',background:'var(--negative)',borderRadius:2,width:woori?.limit?Math.min(Math.abs(curMinus)/woori.limit*100,100)+'%':'0%',transition:'width .5s'}}></div></div>
+            </>
+          )}
+        </div>
+
+        {/* 2. 고정비 */}
+        <div style={box('var(--warm)')}>
+          {editBtnEl(()=>setEditFixed(true))}
+          <div style={lbl}>이번달 고정비</div>
+          <div style={{...num,color:'var(--warm)'}}>{fmtKRW(fixedTotal)}</div>
+          <div style={{fontSize:12,color:'var(--ink-4)',marginTop:6}}>{activeFixed.length}개 항목 합산</div>
+          {editFixed && (
+            <div style={{position:'fixed',inset:0,background:'rgba(26,23,20,0.55)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={()=>setEditFixed(false)}>
+              <div onClick={e=>e.stopPropagation()} style={{background:'var(--paper)',borderRadius:'var(--r-lg)',padding:24,width:'100%',maxWidth:400,maxHeight:'80vh',overflow:'auto',boxShadow:'var(--shadow-lg)'}}>
+                <div className="serif" style={{fontSize:18,marginBottom:12}}>이달 고정비 선택</div>
+                {store.state.fixed.map(f=>(
+                  <label key={f.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderBottom:'1px solid var(--line)',cursor:'pointer'}}>
+                    <input type="checkbox" checked={overrides[f.id]!==false} onChange={e=>store.setFixedOverride(ym,f.id,e.target.checked)} style={{width:15,height:15,accentColor:'var(--accent)'}} />
+                    <div style={{flex:1}}><div style={{fontSize:13,fontWeight:500}}>{f.name}</div><div style={{fontSize:11,color:'var(--ink-4)'}}>{f.day}일 · {f.group}</div></div>
+                    <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:overrides[f.id]===false?'var(--ink-4)':'var(--negative)'}}>{fmtKRW(f.amount)}</div>
+                  </label>
+                ))}
+                <button className="btn btn-primary" style={{width:'100%',marginTop:16,justifyContent:'center'}} onClick={()=>setEditFixed(false)}>확인</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 3. 카드 청구액 */}
+        <div style={box('#5B6CB5')}>
+          {editBtnEl(()=>setEditCard(true))}
+          <div style={lbl}>카드 청구액 ({m}월)</div>
+          <div style={{...num,color:'#5B6CB5'}}>{cardBillTotal ? fmtKRW(cardBillTotal) : '미입력'}</div>
+          <div style={{fontSize:12,color:'var(--ink-4)',marginTop:6}}>매달 1일 입력 · 12~15일 결제</div>
+          {editCard && <CardBillModal ym={ym} current={cardBill} cards={store.state.cards} onSave={(data)=>{store.setCardBillForMonth(ym,data);setEditCard(false);toast('저장됨');}} onClose={()=>setEditCard(false)} />}
+        </div>
+
+        {/* 4. 30일 예상 */}
+        <div style={box(projected>=curMinus?'var(--positive)':'var(--negative)')}>
+          <div style={lbl}>30일 예상 마이너스</div>
+          <div style={{...num,color:projected>=curMinus?'var(--positive)':'var(--negative)'}}>{fmtKRW(projected)}</div>
+          <div style={{fontSize:11,color:'var(--ink-4)',marginTop:6,lineHeight:1.7}}>
+            현재{fmtKRW(curMinus,{compact:true})} + 급여{fmtKRW(salary,{compact:true})} − 고정{fmtKRW(fixedTotal,{compact:true})} − 카드{fmtKRW(cardBillTotal,{compact:true})}
           </div>
-          <div style={{marginTop:18}}><Sparkline data={SPARK_DATA.map(v => v + 200000000)} /></div>
-        </div>
-        <div className="hero-cell">
-          <div className="hero-label"><span className="hero-label-dot" style={{background:'var(--positive)'}}></span>이달 유입</div>
-          <div className="hero-num pos">+{fmtKRW(monthIn,{compact:true})}</div>
-          <div className="hero-meta"><span className="delta up">↑ 0%</span><span>급여</span></div>
-        </div>
-        <div className="hero-cell">
-          <div className="hero-label"><span className="hero-label-dot" style={{background:'var(--negative)'}}></span>이달 지출</div>
-          <div className="hero-num neg">−{fmtKRW(monthOut,{compact:true})}</div>
-          <div className="hero-meta"><span className="faint">고정 {fmtKRW(fixedTotal,{compact:true})} + 소비 {fmtKRW(expTotal,{compact:true})}</span></div>
         </div>
       </div>
 
-      <div className="grid-3-2">
-        <div className="card">
-          <div className="card-head">
-            <div><div className="card-title">통장별 <em>잔액</em></div><div className="card-sub">{store.state.accounts.length}개 계좌</div></div>
-          </div>
-          {store.state.accounts.map(a => {
-            const isDebt = a.balance < 0;
-            const pct = isDebt ? (Math.abs(a.balance) / a.limit) * 100 : 100;
-            return (
-              <div key={a.id} className="row">
-                <div className="cat-mark" style={{
-                  background: isDebt?'var(--negative-soft)':a.kind==='investment'?'var(--indigo-soft)':'var(--positive-soft)',
-                  color: isDebt?'var(--negative)':a.kind==='investment'?'var(--indigo)':'var(--positive)'
-                }}>{a.name[0]}</div>
-                <div className="row-body">
-                  <div className="row-title">{a.name} <span className="text-xs muted" style={{fontWeight:400, marginLeft:6}}>{a.sub}</span></div>
-                  <div className="row-meta">{isDebt?`한도 ${fmtKRW(a.limit,{compact:true})} · ${pct.toFixed(1)}%`:'입출금 가능'}</div>
-                </div>
-                <div style={{minWidth:120}}>{isDebt && <div className="bar thin"><div className="bar-fill" style={{width: pct + '%', background:'var(--negative)'}}></div></div>}</div>
-                <div className={'row-amt mono ' + (isDebt?'neg':'')}>{fmtKRW(a.balance)}</div>
+      {/* 카드 소비 현황 */}
+      <div className="card" style={{marginBottom:16}}>
+        <div className="card-head">
+          <div><div className="card-title">이달 <em>카드 소비</em></div><div className="card-sub">{monthExp.length}건 · {fmtKRW(expTotal)}</div></div>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            {editBudget ? (
+              <div style={{display:'flex',gap:6}}>
+                <input type="number" value={budgetVal} onChange={e=>setBudgetVal(e.target.value)} placeholder="예산" style={{width:110,padding:'6px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:13,fontFamily:'var(--mono)',background:'var(--bg)'}} />
+                <button className="btn btn-primary btn-sm" onClick={()=>{const v=parseInt(budgetVal);if(!isNaN(v)){store.setCardBudget(v);toast('예산 설정됨');}setEditBudget(false);}}>저장</button>
+                <button className="btn btn-sm" onClick={()=>setEditBudget(false)}>취소</button>
               </div>
-            );
-          })}
-        </div>
-
-        <div className="stack">
-          <div className="card">
-            <div className="card-head" style={{marginBottom:12}}><div className="card-title">이달 <em>소비 분포</em></div></div>
-            {catSegs.length === 0 ? (
-              <div style={{padding:'30px 0', textAlign:'center', color:'var(--ink-4)', fontSize:13}}>아직 소비 내역이 없어요</div>
             ) : (
-              <div style={{display:'flex', alignItems:'center', gap:18, marginTop:6}}>
-                <Donut segments={catSegs} center={
-                  <><div className="text-xs muted">합계</div><div className="serif" style={{fontSize:20, fontWeight:500, marginTop:2}}>{fmtKRW(expTotal,{compact:true}).replace('₩','')}</div></>
-                } />
-                <div style={{flex:1, fontSize:12.5}}>
-                  {catSegs.sort((a,b)=>b.value-a.value).slice(0,5).map((s,i) => (
-                    <div key={i} style={{display:'flex', alignItems:'center', gap:8, padding:'4px 0'}}>
-                      <span style={{width:8, height:8, borderRadius:'50%', background:s.color}}></span>
-                      <span style={{flex:1}}>{s.label}</span>
-                      <span className="mono fw6">{fmtKRW(s.value)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <button className="btn btn-sm" onClick={()=>{setBudgetVal(String(cardBudget));setEditBudget(true);}}>예산 {fmtKRW(cardBudget,{compact:true})} 수정</button>
             )}
           </div>
-          <div className="card" style={{padding:20}}>
-            <div className="text-xs muted fw6" style={{textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8}}>30일 예상 현금흐름</div>
-            <div className="serif" style={{fontSize:30, fontWeight:400, letterSpacing:'-0.03em'}}>
-              <span className={monthNet>=0?'pos':'neg'}>{monthNet>=0?'+':'−'}{fmtKRW(Math.abs(monthNet),{compact:true})}</span>
-            </div>
-            <div className="text-sm muted" style={{marginTop:6}}>유입 − (고정 + 소비)</div>
+        </div>
+        <div style={{marginBottom:14}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+            <span style={{fontSize:12,color:'var(--ink-3)'}}>예산 대비 {budgetPct.toFixed(1)}% 사용</span>
+            <span style={{fontSize:12,fontFamily:'var(--mono)',fontWeight:600,color:budgetPct>80?'var(--negative)':'var(--ink-2)'}}>{fmtKRW(expTotal)} / {fmtKRW(cardBudget)}</span>
+          </div>
+          <div style={{height:8,background:'var(--paper-2)',borderRadius:4,overflow:'hidden'}}>
+            <div style={{height:'100%',background:budgetPct>80?'var(--negative)':budgetPct>60?'var(--warm)':'var(--accent)',width:budgetPct+'%',borderRadius:4,transition:'width .5s'}}></div>
           </div>
         </div>
+        {Object.entries(byCard).length>0 ? (
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {Object.entries(byCard).sort((a,b)=>b[1]-a[1]).map(([card,amt])=>(
+              <div key={card} style={{display:'flex',alignItems:'center',gap:10}}>
+                <div style={{fontSize:12,width:100,flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{card}</div>
+                <div style={{flex:1,height:5,background:'var(--paper-2)',borderRadius:3,overflow:'hidden'}}><div style={{height:'100%',background:'var(--accent)',borderRadius:3,width:expTotal?(amt/expTotal*100)+'%':'0%'}}></div></div>
+                <div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,width:75,textAlign:'right',flexShrink:0}}>{fmtKRW(amt)}</div>
+              </div>
+            ))}
+          </div>
+        ) : <div style={{padding:'16px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>이달 소비 내역 없음</div>}
       </div>
 
-      <div style={{marginTop:20}} className="card">
-        <div className="card-head">
-          <div><div className="card-title">신용카드 <em>한도 사용률</em></div><div className="card-sub">{cards.length}개 카드</div></div>
-          <div className="gap-sm">
-            <button className="btn btn-sm btn-primary" onClick={openCard}>+ 카드</button>
-          </div>
-        </div>
-        {cards.map(c => {
-          const pct = (c.used / c.limit) * 100;
-          const isHigh = pct > 70;
-          return (
-            <div key={c.id}>
-              <div className="row">
-                <div className="cat-mark" style={{background:'var(--paper-2)', color:'var(--ink)', fontFamily:'var(--mono)', fontSize:11, fontStyle:'normal'}}>•••{c.last4.slice(-2)}</div>
-                <div className="row-body" style={{maxWidth:200}}><div className="row-title">{c.co}</div><div className="row-meta">{c.name} · 결제일 {c.paymentDay}일</div></div>
-                <div style={{flex:1, minWidth:0}}><div className="bar"><div className="bar-fill" style={{width: pct + '%', background: isHigh?'var(--negative)':'var(--accent)'}}></div></div></div>
-                <div className="mono text-sm" style={{textAlign:'right', minWidth:130}}>
-                  <span className={'fw6 ' + (isHigh?'neg':'')}>{fmtKRW(c.used)}</span>
-                  <span className="faint"> / {fmtKRW(c.limit, {compact:true})}</span>
-                </div>
-                <div className={'mono fw6 ' + (isHigh?'neg':'muted')} style={{minWidth:50, textAlign:'right'}}>{pct.toFixed(0)}%</div>
-                <button className="icon-btn" style={{width:28,height:28}} onClick={() => setEditCardDash(editCardDash===c.id?null:c.id)}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                </button>
-              </div>
-              {editCardDash === c.id && (
-                <div style={{display:'flex', gap:8, alignItems:'center', padding:'9px 12px', background:'var(--paper-2)', borderRadius:'var(--r-sm)', margin:'4px 0', flexWrap:'wrap'}}>
-                  <span style={{fontSize:11.5, fontWeight:600, color:'var(--ink-3)'}}>이달 사용액</span>
-                  <input type="number" defaultValue={c.used} id={`ddash-${c.id}`}
-                    style={{flex:'1 1 120px', padding:'6px 9px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, fontFamily:'var(--mono)', background:'var(--bg)'}} />
-                  <button className="btn btn-primary btn-sm" onClick={() => {
-                    const v = parseInt(document.getElementById(`ddash-${c.id}`)?.value);
-                    if (!isNaN(v)) { store.updateCard(c.id, {used:v}); toast('수정됐어요'); }
-                    setEditCardDash(null);
-                  }}>저장</button>
-                  <button className="btn btn-sm" onClick={() => setEditCardDash(null)}>취소</button>
-                </div>
-              )}
-            </div>
-          );
+      {/* 카드 한도 */}
+      <div className="card">
+        <div className="card-head"><div className="card-title">신용카드 <em>한도 사용률</em></div><button className="btn btn-sm btn-primary" onClick={openCard}>+ 카드</button></div>
+        {store.state.cards.map(c=>{
+          const pct=c.limit?(c.used/c.limit)*100:0; const isHigh=pct>70;
+          return <CardUsageEditRow key={c.id} c={c} pct={pct} isHigh={isHigh} store={store} toast={toast} />;
         })}
       </div>
     </div>
   );
 }
 
+function CardBillModal({ym,current,onSave,onClose,cards}){
+  const [vals,setVals]=uS(()=>{ const i={}; cards.forEach(c=>{i[c.id]=current.breakdown?.[c.id]||'';}); return i; });
+  const total=Object.values(vals).reduce((s,v)=>s+(parseInt(v)||0),0);
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(26,23,20,0.55)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'var(--paper)',borderRadius:'var(--r-lg)',padding:24,width:'100%',maxWidth:380,maxHeight:'85vh',overflow:'auto',boxShadow:'var(--shadow-lg)'}}>
+        <div className="serif" style={{fontSize:18,marginBottom:6}}>{ym.split('-')[1]}월 카드 청구액</div>
+        <div style={{fontSize:12,color:'var(--ink-3)',marginBottom:16}}>매달 1일 결정되는 카드사별 청구금액</div>
+        {cards.map(c=>(
+          <div key={c.id} style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
+            <div style={{flex:1,fontSize:13,fontWeight:500}}>{c.co} <span style={{fontSize:11,color:'var(--ink-4)'}}>{c.name}</span></div>
+            <input type="number" value={vals[c.id]} onChange={e=>setVals(v=>({...v,[c.id]:e.target.value}))} placeholder="0"
+              style={{width:100,padding:'7px 10px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:13,fontFamily:'var(--mono)',background:'var(--bg)',textAlign:'right'}} />
+          </div>
+        ))}
+        <div style={{display:'flex',justifyContent:'space-between',padding:'12px 0',borderTop:'1px solid var(--line)',marginBottom:14}}>
+          <span style={{fontWeight:600}}>합계</span>
+          <span style={{fontFamily:'var(--mono)',fontWeight:700,color:'var(--negative)'}}>{fmtKRW(total)}</span>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-primary" style={{flex:1,justifyContent:'center'}} onClick={()=>onSave({total,breakdown:Object.fromEntries(Object.entries(vals).map(([k,v])=>[k,parseInt(v)||0]))})}>저장</button>
+          <button className="btn" style={{flex:1,justifyContent:'center'}} onClick={onClose}>취소</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CardUsageEditRow({c,pct,isHigh,store,toast}){
+  const [editing,setEditing]=uS(false);
+  return (
+    <div>
+      <div className="row">
+        <div className="cat-mark" style={{background:'var(--paper-2)',color:'var(--ink)',fontFamily:'var(--mono)',fontSize:11}}>{c.co.slice(0,2)}</div>
+        <div className="row-body" style={{maxWidth:200}}><div className="row-title">{c.co}</div><div className="row-meta">{c.name} · {c.paymentDay}일</div></div>
+        <div style={{flex:1}}><div className="bar"><div className="bar-fill" style={{width:pct+'%',background:isHigh?'var(--negative)':'var(--accent)'}}></div></div></div>
+        <div className="mono text-sm" style={{textAlign:'right',minWidth:120}}><span className={'fw6 '+(isHigh?'neg':'')}>{fmtKRW(c.used)}</span><span className="faint"> / {fmtKRW(c.limit,{compact:true})}</span></div>
+        <button className="icon-btn" style={{width:28,height:28}} onClick={()=>setEditing(!editing)}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+        </button>
+      </div>
+      {editing && <InlineCardEdit c={c} onSave={(p)=>{store.updateCard(c.id,p);toast('수정됨');setEditing(false);}} onCancel={()=>setEditing(false)} />}
+    </div>
+  );
+}
+
+function InlineCardEdit({c,onSave,onCancel}){
+  const [used,setUsed]=uS(c.used); const [limit,setLimit]=uS(c.limit);
+  const st={padding:'7px 10px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:13,fontFamily:'var(--mono)',background:'var(--bg)',width:'100%'};
+  return (
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr auto auto',gap:8,padding:'10px 14px',background:'var(--accent-soft)',borderRadius:'var(--r-sm)',margin:'4px 0',alignItems:'end'}}>
+      <div><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>이달 사용액</div><input type="number" value={used} onChange={e=>setUsed(+e.target.value)} style={st} /></div>
+      <div><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>한도</div><input type="number" value={limit} onChange={e=>setLimit(+e.target.value)} style={st} /></div>
+      <button className="btn btn-primary btn-sm" onClick={()=>onSave({used,limit})}>저장</button>
+      <button className="btn btn-sm" onClick={onCancel}>취소</button>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────
-// ACCOUNTS
+// ACCOUNTS — per-bank flows
 // ─────────────────────────────────────────────────────────
 function AccountsPage({ openAccount, openIncome }) {
   const store = useStore();
   const toast = useToast();
   const [bank, setBank] = uS(store.state.accounts[0]?.id);
-  const [editBal, setEditBal] = uS(null); // {id, balance, name}
-  // Reset selection if account deleted
-  uM(() => {
-    if (!store.state.accounts.find(a => a.id === bank) && store.state.accounts[0]) {
-      setBank(store.state.accounts[0].id);
-    }
-  }, [store.state.accounts, bank]);
-  const a = store.state.accounts.find(x => x.id === bank) || store.state.accounts[0];
-  if (!a) {
-    return (
-      <div className="tab-content">
-        <PageHeader eyebrow="Accounts" title="No accounts " titleEm="yet." sub="첫 통장을 등록해보세요."
-          right={<button className="btn btn-primary" onClick={openAccount}>+ 통장 추가</button>} />
-      </div>
-    );
-  }
-  const isDebt = a.balance < 0;
-  const pct = isDebt ? (Math.abs(a.balance) / a.limit) * 100 : 0;
+  const [editBal, setEditBal] = uS(false);
+  const [addingFlow, setAddingFlow] = uS(false);
+  const [editFlowId, setEditFlowId] = uS(null);
 
-  return (
+  uM(()=>{ if(!store.state.accounts.find(a=>a.id===bank)&&store.state.accounts[0]) setBank(store.state.accounts[0].id); },[store.state.accounts,bank]);
+
+  const a = store.state.accounts.find(x=>x.id===bank)||store.state.accounts[0];
+  if(!a) return (
     <div className="tab-content">
-      <PageHeader eyebrow="Accounts" title="Money in motion, " titleEm="by account." sub="각 통장으로 들어오고 나가는 흐름을 시간순으로 확인하세요."
-        right={
-          <div className="gap-sm">
-            <button className="btn" onClick={openIncome}>월 수입 설정</button>
-            <button className="btn btn-primary" onClick={openAccount}>+ 통장 추가</button>
-          </div>
-        } />
-
-      <div style={{marginBottom:24, display:'flex', gap:6, flexWrap:'wrap'}}>
-        {store.state.accounts.map(x => (
-          <button key={x.id} className={'btn ' + (x.id === bank?'btn-primary':'')} style={{padding:'6px 14px'}} onClick={() => setBank(x.id)}>{x.name}</button>
-        ))}
-      </div>
-
-      <div className="card" style={{padding:32, marginBottom:20, background:'linear-gradient(135deg, var(--paper) 0%, var(--paper-2) 100%)'}}>
-        <div className="between" style={{alignItems:'flex-start'}}>
-          <div>
-            <div className="text-xs muted fw6" style={{textTransform:'uppercase', letterSpacing:'0.12em', marginBottom:8}}>{a.name} · {a.sub}</div>
-            <div className="serif" style={{fontSize:48, fontWeight:400, letterSpacing:'-0.04em', lineHeight:1, color: isDebt?'var(--negative)':'var(--ink)'}}>{fmtKRW(a.balance)}</div>
-            <div style={{marginTop:14, display:'flex', gap:14, alignItems:'center'}}>
-              <span className="text-sm muted">2026년 4월 26일 기준</span>
-              {isDebt && <span className="chip neg">한도 {pct.toFixed(1)}%</span>}
-            </div>
-          </div>
-          <div style={{display:'flex', gap:8}}>
-            <button className="btn btn-sm" onClick={() => setEditBal({id:a.id, balance:a.balance, name:a.name})}>잔액 수정</button>
-            {store.state.accounts.length > 1 && (
-            <button className="icon-btn" title="통장 삭제"
-              onClick={() => { if (confirm(`"${a.name}"을(를) 삭제할까요?`)) { store.deleteAccount(a.id); toast('통장이 삭제되었어요'); }}}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            </button>
-            )}
-          </div>
-        </div>
-        {editBal && editBal.id === a.id && (
-          <div style={{marginTop:16, padding:'14px 16px', background:'var(--paper-2)', borderRadius:'var(--r-sm)', border:'1px solid var(--line)', display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
-            <span style={{fontSize:12, fontWeight:600, color:'var(--ink-3)', flex:'0 0 auto'}}>잔액 수정 (원)</span>
-            <input type="number" defaultValue={editBal.balance}
-              id="bal-edit-input"
-              style={{flex:'1 1 160px', padding:'8px 11px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--bg)', fontFamily:'var(--mono)'}} />
-            <button className="btn btn-primary btn-sm" onClick={() => {
-              const v = parseInt(document.getElementById('bal-edit-input').value);
-              if (!isNaN(v)) { store.updateAccount(editBal.id, {balance:v}); toast('잔액이 수정됐어요'); }
-              setEditBal(null);
-            }}>저장</button>
-            <button className="btn btn-sm" onClick={() => setEditBal(null)}>취소</button>
-          </div>
-        )}
-        {isDebt && (
-          <div style={{marginTop:24}}>
-            <div className="bar" style={{height:6}}><div className="bar-fill" style={{width: pct + '%', background:'var(--negative)'}}></div></div>
-          </div>
-        )}
-      </div>
-
-      <div className="grid-3" style={{marginBottom:20}}>
-        <Tile label="이달 유입" num={'+'+fmtKRW(a.flowIn, {compact:true})} sub="급여 등" accent="var(--positive)" />
-        <Tile label="이달 지출" num={'−'+fmtKRW(a.flowOut, {compact:true})} sub="자동이체" accent="var(--negative)" />
-        <Tile label="순 변동" num={(a.flowIn-a.flowOut>=0?'+':'−')+fmtKRW(Math.abs(a.flowIn-a.flowOut), {compact:true})} sub="흐름 차" accent="var(--accent)" />
-      </div>
-
-      <div className="card">
-        <div className="card-head"><div className="card-title">이달 <em>자금 흐름</em></div></div>
-        {FLOW_LIST.map((e, i) => (
-          <div key={i} className="row">
-            <div className={'day-chip ' + e.kind}>{e.day}</div>
-            <div className="row-body"><div className="row-title">{e.desc}</div><div className="row-meta">{e.meta}</div></div>
-            <div className={'row-amt mono ' + (e.amount>0?'in':'out')}>{fmtKRW(e.amount, {showPlus: e.amount>0})}</div>
-          </div>
-        ))}
-      </div>
+      <PageHeader eyebrow="Accounts" title="No accounts " titleEm="yet." right={<button className="btn btn-primary" onClick={openAccount}>+ 통장 추가</button>} />
     </div>
   );
-}
 
-// FLOW MAP - same as before, static
-function FlowMapPage() {
+  const isDebt = a.balance<0;
+  const pct = isDebt?(Math.abs(a.balance)/(a.limit||1))*100:0;
+  const bankFlows = ((store.state.bankFlows||{})[bank])||[];
+  const inTotal  = bankFlows.filter(f=>f.kind==='in').reduce((s,f)=>s+f.amount,0);
+  const outTotal = bankFlows.filter(f=>f.kind==='out'||f.kind==='var').reduce((s,f)=>s+f.amount,0);
+  const kindColor = {in:'var(--positive)',out:'var(--negative)',var:'var(--warm)'};
+
   return (
     <div className="tab-content">
-      <PageHeader eyebrow="Flow" title="How money " titleEm="travels." sub="급여로 시작해 카드, 고정비, 투자로 흩어지는 자금의 경로를 한 눈에." />
+      <PageHeader eyebrow="Accounts" title="Money in motion, " titleEm="by account."
+        right={<div className="gap-sm"><button className="btn" onClick={openIncome}>월 수입</button><button className="btn btn-primary" onClick={openAccount}>+ 통장</button></div>} />
+
+      <div style={{marginBottom:16,display:'flex',gap:6,flexWrap:'wrap'}}>
+        {store.state.accounts.map(x=>(
+          <button key={x.id} className={'btn '+(x.id===bank?'btn-primary':'')} style={{padding:'6px 14px'}} onClick={()=>setBank(x.id)}>{x.name}</button>
+        ))}
+      </div>
+
+      <div className="card" style={{padding:28,marginBottom:14}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:16,flexWrap:'wrap'}}>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--ink-3)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8}}>{a.name} · {a.sub}</div>
+            {editBal ? (
+              <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                <input type="number" id="bal-edit-inp" defaultValue={a.balance} style={{padding:'8px 12px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:18,fontFamily:'var(--mono)',background:'var(--bg)',width:180}} />
+                <button className="btn btn-primary btn-sm" onClick={()=>{ const v=parseInt(document.getElementById('bal-edit-inp').value); if(!isNaN(v)){store.updateAccount(a.id,{balance:v});toast('잔액 수정됨');} setEditBal(false); }}>저장</button>
+                <button className="btn btn-sm" onClick={()=>setEditBal(false)}>취소</button>
+              </div>
+            ) : (
+              <div style={{display:'flex',alignItems:'baseline',gap:12}}>
+                <div className="serif" style={{fontSize:40,fontWeight:400,letterSpacing:'-0.04em',color:isDebt?'var(--negative)':'var(--ink)'}}>{fmtKRW(a.balance)}</div>
+                <button className="btn btn-sm" onClick={()=>setEditBal(true)}>잔액 수정</button>
+              </div>
+            )}
+            <div style={{marginTop:8,fontSize:12.5,color:'var(--ink-3)'}}>{isDebt?`한도 ${fmtKRW(a.limit,{compact:true})} · ${pct.toFixed(1)}% 사용`:'입출금 가능'}</div>
+          </div>
+          {store.state.accounts.length>1&&<button className="icon-btn" onClick={()=>{if(confirm(`"${a.name}"을 삭제?`)){store.deleteAccount(a.id);toast('삭제됨');}}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>}
+        </div>
+        {isDebt&&<div style={{marginTop:14}}><div className="bar" style={{height:6}}><div className="bar-fill" style={{width:pct+'%',background:'var(--negative)'}}></div></div></div>}
+      </div>
+
+      <div className="grid-3" style={{marginBottom:14}}>
+        <Tile label="이달 유입" num={'+'+fmtKRW(inTotal,{compact:true})} accent="var(--positive)" />
+        <Tile label="이달 지출" num={'−'+fmtKRW(outTotal,{compact:true})} accent="var(--negative)" />
+        <Tile label="순 변동" num={(inTotal-outTotal>=0?'+':'−')+fmtKRW(Math.abs(inTotal-outTotal),{compact:true})} accent="var(--accent)" />
+      </div>
+
       <div className="card">
         <div className="card-head">
-          <div className="card-title">전체 <em>모식도</em></div>
-          <div className="gap-sm" style={{flexWrap:'wrap'}}>
-            <span className="chip pos">● 유입</span><span className="chip accent">● 허브</span>
-            <span className="chip neg">● 고정비</span><span className="chip indigo">● 투자</span>
-          </div>
+          <div><div className="card-title">{a.name} <em>자금 흐름</em></div><div className="card-sub">{bankFlows.length}건</div></div>
+          <button className="btn btn-primary btn-sm" onClick={()=>setAddingFlow(true)}>+ 항목</button>
         </div>
-        <svg className="flow-svg" viewBox="0 0 900 460" preserveAspectRatio="xMidYMid meet">
-          <g><rect className="flow-node-bg income" x="20" y="180" width="150" height="80" rx="10" /><text className="flow-node-text" x="95" y="212">급여 입금</text><text className="flow-node-meta" x="95" y="232">+₩4,200,000</text><text className="flow-node-meta" x="95" y="248" style={{fontSize:10}}>매월 25일</text></g>
-          <g><rect className="flow-node-bg hub" x="290" y="180" width="160" height="80" rx="10" /><text className="flow-node-text" x="370" y="212">우리은행 주거래</text><text className="flow-node-meta" x="370" y="232">−₩4,920만</text><text className="flow-node-meta" x="370" y="248" style={{fontSize:10}}>마이너스통장</text></g>
-          {[{y:30, label:'주담대 원리금', amount:'−₩1,300,000', cls:'out'},{y:130, label:'카드 결제', amount:'−₩620,000', cls:'out'},{y:230, label:'ISA 투자', amount:'−₩1,500,000', cls:'income'},{y:330, label:'고정비 합계', amount:'−₩504,000', cls:'out'}].map((n, i) => (
-            <g key={i}><rect className={'flow-node-bg ' + n.cls} x="600" y={n.y} width="170" height="76" rx="10" /><text className="flow-node-text" x="685" y={n.y+32}>{n.label}</text><text className="flow-node-meta" x="685" y={n.y+52}>{n.amount}</text></g>
-          ))}
-          <path className="flow-line solid income" d="M 170 220 C 230 220 230 220 290 220" />
-          <path className="flow-line solid out" d="M 450 215 C 525 215 525 70 600 70" />
-          <path className="flow-line solid out" d="M 450 220 C 525 220 525 168 600 168" />
-          <path className="flow-line solid income" d="M 450 225 C 525 225 525 268 600 268" />
-          <path className="flow-line solid out" d="M 450 230 C 525 230 525 368 600 368" />
-        </svg>
+        {bankFlows.length===0&&!addingFlow&&(
+          <div style={{padding:'28px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>
+            자금 흐름 항목이 없습니다<br/>
+            <button className="btn btn-sm" style={{marginTop:10}} onClick={()=>setAddingFlow(true)}>+ 추가</button>
+          </div>
+        )}
+        {[...bankFlows].sort((a,b)=>(a.day||0)-(b.day||0)).map(f=>(
+          <div key={f.id}>
+            <div className="row">
+              <div className={'day-chip '+(f.kind||'out')}>{f.day||'-'}</div>
+              <div className="row-body"><div className="row-title">{f.desc}</div><div className="row-meta">{f.meta}</div></div>
+              <div className={'row-amt mono fw6'} style={{color:kindColor[f.kind||'out']}}>{f.kind==='in'?'+':'−'}{fmtKRW(f.amount)}</div>
+              <button className="icon-btn" style={{width:28,height:28}} onClick={()=>setEditFlowId(editFlowId===f.id?null:f.id)}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              </button>
+              <button className="icon-btn" style={{width:28,height:28}} onClick={()=>{store.deleteBankFlow(bank,f.id);toast('삭제됨');}}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+              </button>
+            </div>
+            {editFlowId===f.id&&<BankFlowEditRow initial={f} onSave={(p)=>{store.updateBankFlow(bank,f.id,p);toast('수정됨');setEditFlowId(null);}} onCancel={()=>setEditFlowId(null)} />}
+          </div>
+        ))}
+        {addingFlow&&<BankFlowEditRow initial={{day:'',kind:'out',desc:'',meta:'',amount:''}} isNew onSave={(d)=>{store.addBankFlow(bank,d);toast('추가됨');setAddingFlow(false);}} onCancel={()=>setAddingFlow(false)} />}
       </div>
     </div>
   );
 }
 
-// FIXED COSTS
+function BankFlowEditRow({initial,onSave,onCancel,isNew}){
+  const [day,setDay]=uS(initial.day||'');
+  const [kind,setKind]=uS(initial.kind||'out');
+  const [desc,setDesc]=uS(initial.desc||'');
+  const [meta,setMeta]=uS(initial.meta||'');
+  const [amt,setAmt]=uS(initial.amount||'');
+  const st={padding:'7px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:12.5,background:'var(--bg)',width:'100%'};
+  return (
+    <div style={{display:'grid',gridTemplateColumns:'50px 60px 1fr 1fr 100px auto auto',gap:6,padding:'10px 12px',background:'var(--accent-soft)',borderRadius:'var(--r-sm)',margin:'4px 0',alignItems:'end'}}>
+      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>일</div><input type="number" min="1" max="31" value={day} onChange={e=>setDay(e.target.value)} style={st}/></div>
+      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>유형</div>
+        <select value={kind} onChange={e=>setKind(e.target.value)} style={{...st,cursor:'pointer'}}>
+          <option value="in">유입</option><option value="out">지출</option><option value="var">변동</option>
+        </select>
+      </div>
+      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>내용</div><input value={desc} onChange={e=>setDesc(e.target.value)} style={st}/></div>
+      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>메모</div><input value={meta} onChange={e=>setMeta(e.target.value)} style={st}/></div>
+      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>금액</div><input type="number" value={amt} onChange={e=>setAmt(e.target.value)} style={{...st,fontFamily:'var(--mono)'}}/></div>
+      <button className="btn btn-primary btn-sm" onClick={()=>onSave({day:+day,kind,desc,meta,amount:+amt})}>{isNew?'추가':'저장'}</button>
+      <button className="btn btn-sm" onClick={onCancel}>취소</button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// FLOW MAP — dynamic real data
+// ─────────────────────────────────────────────────────────
+function FlowMapPage() {
+  const store = useStore();
+  const toast = useToast();
+  const { y, m } = store.state.month;
+  const ym = `${y}-${String(m).padStart(2,'0')}`;
+  const [editSalary,setEditSalary]=uS(false);
+  const [salaryVal,setSalaryVal]=uS('');
+
+  const salary   = ((store.state.monthlySalaries||{})[ym])||store.state.income;
+  const woori    = store.state.accounts.find(a=>a.id==='woori');
+  const curMinus = woori?.balance||0;
+  const overrides= (store.state.fixedOverrides||{})[ym]||{};
+  const activeFixed = store.state.fixed.filter(f=>overrides[f.id]!==false);
+  const fixedTotal  = activeFixed.reduce((s,f)=>s+f.amount,0);
+  const cardBill    = ((store.state.monthlyCardBills||{})[ym])||{};
+  const cardBillTotal = cardBill.total||0;
+  const groups = {};
+  activeFixed.forEach(f=>{ if(!groups[f.group])groups[f.group]=[]; groups[f.group].push(f); });
+  const boxSt = (bg,bdr)=>({padding:'14px 16px',background:bg,border:`1px solid ${bdr}`,borderRadius:'var(--r-md)',marginBottom:10});
+  const rowSt = {display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',borderBottom:'1px solid var(--line)',fontSize:13};
+
+  return (
+    <div className="tab-content">
+      <PageHeader eyebrow="Flow" title="How money " titleEm="travels." sub="실제 데이터 기반 자금 흐름" />
+
+      <div style={boxSt('var(--paper)','var(--line)')}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--positive)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6}}>📥 {m}월 급여 (매달 25일 입금)</div>
+            {editSalary ? (
+              <div style={{display:'flex',gap:8,alignItems:'center',marginTop:6}}>
+                <input type="number" value={salaryVal} onChange={e=>setSalaryVal(e.target.value)} placeholder="급여 입력" style={{width:160,padding:'8px 10px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:14,fontFamily:'var(--mono)',background:'var(--bg)'}} />
+                <button className="btn btn-primary btn-sm" onClick={()=>{const v=parseInt(salaryVal);if(!isNaN(v)){store.setSalaryForMonth(ym,v);toast('급여 저장됨');}setEditSalary(false);}}>저장</button>
+                <button className="btn btn-sm" onClick={()=>setEditSalary(false)}>취소</button>
+              </div>
+            ) : (
+              <div style={{display:'flex',alignItems:'baseline',gap:12,marginTop:4}}>
+                <span className="serif" style={{fontSize:28,fontWeight:500,color:'var(--positive)'}}>{fmtKRW(salary)}</span>
+                <button className="btn btn-sm" onClick={()=>{setSalaryVal(String(salary));setEditSalary(true);}}>이달 급여 입력</button>
+              </div>
+            )}
+          </div>
+          <div style={{textAlign:'right',fontSize:12,color:'var(--ink-3)',lineHeight:1.8}}>→ 우리은행 마이너스통장<br/><span style={{fontSize:11}}>가변 항목 · 매달 직접 입력</span></div>
+        </div>
+      </div>
+
+      <div style={boxSt('color-mix(in oklab, var(--accent) 5%, var(--paper))','var(--accent-line)')}>
+        <div style={{fontSize:11,fontWeight:700,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>🏦 우리은행 마이너스통장 (허브)</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
+          <div><div style={{fontSize:11,color:'var(--ink-4)',marginBottom:3}}>현재 잔액</div><div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:'var(--negative)'}}>{fmtKRW(curMinus)}</div></div>
+          <div><div style={{fontSize:11,color:'var(--ink-4)',marginBottom:3}}>이달 유입 (급여)</div><div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:'var(--positive)'}}>+{fmtKRW(salary)}</div></div>
+          <div><div style={{fontSize:11,color:'var(--ink-4)',marginBottom:3}}>30일 예상</div><div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:(curMinus+salary-fixedTotal-cardBillTotal)>curMinus?'var(--positive)':'var(--negative)'}}>{fmtKRW(curMinus+salary-fixedTotal-cardBillTotal)}</div></div>
+        </div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:12}}>
+        <div style={boxSt('var(--paper)','var(--line)')}>
+          <div style={{fontSize:11,fontWeight:700,color:'#5B6CB5',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>💳 카드 청구 ({m}월)</div>
+          {store.state.cards.map(c=>{ const amt=cardBill.breakdown?.[c.id]||0; return amt>0?(<div key={c.id} style={rowSt}><span>{c.co}</span><span style={{fontFamily:'var(--mono)',fontWeight:600,color:'var(--negative)'}}>−{fmtKRW(amt)}</span></div>):null; })}
+          <div style={{...rowSt,borderBottom:'none',fontWeight:700}}><span>합계</span><span style={{fontFamily:'var(--mono)',color:'var(--negative)'}}>−{fmtKRW(cardBillTotal)}</span></div>
+        </div>
+        {Object.entries(groups).map(([grp,items])=>(
+          <div key={grp} style={boxSt('var(--paper)','var(--line)')}>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--warm)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>{grp}</div>
+            {items.sort((a,b)=>a.day-b.day).map(f=>(<div key={f.id} style={rowSt}><span style={{fontSize:12.5}}>{f.day}일 {f.name}</span><span style={{fontFamily:'var(--mono)',fontWeight:600,color:'var(--negative)'}}>−{fmtKRW(f.amount)}</span></div>))}
+            <div style={{...rowSt,borderBottom:'none',fontWeight:700}}><span>소계</span><span style={{fontFamily:'var(--mono)',color:'var(--negative)'}}>−{fmtKRW(items.reduce((s,f)=>s+f.amount,0))}</span></div>
+          </div>
+        ))}
+        <div style={{...boxSt('color-mix(in oklab, var(--negative) 5%, var(--paper))','color-mix(in oklab, var(--negative) 30%, transparent)'),display:'flex',flexDirection:'column',justifyContent:'center'}}>
+          <div style={{fontSize:11,fontWeight:700,color:'var(--negative)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>📤 이달 총 출금</div>
+          <div style={{fontFamily:'var(--mono)',fontSize:24,fontWeight:700,color:'var(--negative)',marginBottom:8}}>−{fmtKRW(fixedTotal+cardBillTotal)}</div>
+          <div style={{fontSize:12,color:'var(--ink-3)',lineHeight:1.8}}><div>고정비: {fmtKRW(fixedTotal)}</div><div>카드:   {fmtKRW(cardBillTotal)}</div></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// FIXED COSTS — with next month toggle
+// ─────────────────────────────────────────────────────────
 function FixedCostsPage({ openFixed }) {
   const store = useStore();
   const toast = useToast();
-  const [editItem, setEditItem] = uS(null);
-  // group by group
-  const groups = uM(() => {
-    const m = {};
-    store.state.fixed.forEach(f => { if (!m[f.group]) m[f.group] = []; m[f.group].push(f); });
-    return Object.entries(m).map(([group, items]) => ({ group, items, total: items.reduce((s,i) => s+i.amount, 0) }));
-  }, [store.state.fixed]);
-  const total = store.state.fixed.reduce((s,f) => s+f.amount, 0);
+  const { y, m } = store.state.month;
+  const ym = `${y}-${String(m).padStart(2,'0')}`;
+  const [viewMode,setViewMode]=uS('this');
+  const [editItem,setEditItem]=uS(null);
+  const nextDate = new Date(y,m,1);
+  const nextYm = `${nextDate.getFullYear()}-${String(nextDate.getMonth()+1).padStart(2,'0')}`;
+  const targetYm = viewMode==='this'?ym:nextYm;
+  const overrides = (store.state.fixedOverrides||{})[targetYm]||{};
+  const groups = uSe(()=>{
+    const g={}; store.state.fixed.forEach(f=>{if(!g[f.group])g[f.group]=[];g[f.group].push(f);});
+    return Object.entries(g).map(([group,items])=>({group,items}));
+  },[store.state.fixed]);
+  const activeTotal=store.state.fixed.filter(f=>overrides[f.id]!==false).reduce((s,f)=>s+f.amount,0);
+  const total=store.state.fixed.reduce((s,f)=>s+f.amount,0);
 
   return (
     <div className="tab-content">
-      <PageHeader eyebrow="Recurring" title="Fixed costs, " titleEm="the spine." sub="매달 같은 날, 같은 곳으로 빠져나가는 돈들."
-        right={<button className="btn btn-primary" onClick={openFixed}>+ 항목 추가</button>} />
-
-      <div className="grid-3" style={{marginBottom:20}}>
-        <Tile label="월 고정비 합계" num={fmtKRW(total)} sub={`${groups.length}개 카테고리`} accent="var(--negative)" />
-        <Tile label="소득 대비 비율" num={`${Math.round(total/store.state.income*100)}%`} sub={`₩${(store.state.income/10000).toFixed(0)}만 중`} accent="var(--warm)" />
-        <Tile label="등록된 항목" num={`${store.state.fixed.length}개`} sub="자동이체" accent="var(--accent)" />
+      <PageHeader eyebrow="Recurring" title="Fixed costs, " titleEm="the spine." right={<button className="btn btn-primary" onClick={openFixed}>+ 항목 추가</button>} />
+      <div className="grid-3" style={{marginBottom:14}}>
+        <Tile label="전체 고정비" num={fmtKRW(total)} sub={`${store.state.fixed.length}개`} accent="var(--negative)" />
+        <Tile label={`${viewMode==='this'?m:nextDate.getMonth()+1}월 적용액`} num={fmtKRW(activeTotal)} sub="토글 반영" accent="var(--warm)" />
+        <Tile label="소득 대비" num={`${Math.round(activeTotal/store.state.income*100)}%`} accent="var(--accent)" />
       </div>
-
-      {groups.map(g => (
-        <div key={g.group} className="card" style={{marginBottom:16, padding:0, overflow:'hidden'}}>
-          <div className="between" style={{padding:'18px 24px', background:'var(--paper-2)', borderBottom:'1px solid var(--line)'}}>
-            <div><div className="card-title">{g.group}</div><div className="card-sub">{g.items.length}건</div></div>
-            <div className="serif" style={{fontSize:22, fontWeight:500}}>{fmtKRW(g.total)}</div>
+      <div style={{display:'flex',gap:8,marginBottom:14}}>
+        <button className={'btn '+(viewMode==='this'?'btn-primary':'')} onClick={()=>setViewMode('this')}>{m}월 (이번달)</button>
+        <button className={'btn '+(viewMode==='next'?'btn-primary':'')} onClick={()=>setViewMode('next')}>{nextDate.getMonth()+1}월 (다음달)</button>
+      </div>
+      {viewMode==='next'&&<div style={{background:'var(--accent-soft)',border:'1px solid var(--accent-line)',borderRadius:'var(--r-md)',padding:'10px 14px',marginBottom:12,fontSize:12.5,color:'var(--ink-2)'}}>💡 다음달 고정비를 미리 조정합니다. 체크 해제 시 다음달 제외.</div>}
+      {groups.map(g=>{
+        const groupTotal=g.items.reduce((s,f)=>s+(overrides[f.id]!==false?f.amount:0),0);
+        return (
+          <div key={g.group} className="card" style={{marginBottom:14,padding:0,overflow:'hidden'}}>
+            <div className="between" style={{padding:'16px 22px',background:'var(--paper-2)',borderBottom:'1px solid var(--line)'}}>
+              <div><div className="card-title">{g.group}</div><div className="card-sub">{g.items.length}건</div></div>
+              <div className="serif" style={{fontSize:20,fontWeight:500}}>{fmtKRW(groupTotal)}</div>
+            </div>
+            <div style={{padding:'4px 22px'}}>
+              {g.items.map(item=>{
+                const isActive=overrides[item.id]!==false;
+                return (
+                  <div key={item.id}>
+                    <div className="row">
+                      <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',marginRight:4}}>
+                        <input type="checkbox" checked={isActive} onChange={e=>store.setFixedOverride(targetYm,item.id,e.target.checked)} style={{width:14,height:14,accentColor:'var(--accent)'}} />
+                      </label>
+                      <div className="day-chip" style={{opacity:isActive?1:.4}}>{item.day}</div>
+                      <div className="row-body" style={{opacity:isActive?1:.4}}><div className="row-title">{item.name}</div><div className="row-meta">{item.meta}</div></div>
+                      <div className="row-amt out mono" style={{opacity:isActive?1:.4}}>{isActive?'−'+fmtKRW(item.amount):<s>{fmtKRW(item.amount)}</s>}</div>
+                      <button className="icon-btn" style={{width:28,height:28}} onClick={()=>setEditItem(editItem?.id===item.id?null:item)}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                      </button>
+                      <button className="icon-btn" style={{width:28,height:28}} onClick={()=>{store.deleteFixed(item.id);toast('삭제됨');}}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                      </button>
+                    </div>
+                    {editItem?.id===item.id&&<InlineEditFixed item={item} onSave={(p)=>{store.updateFixed(item.id,p);toast('수정됨');setEditItem(null);}} onCancel={()=>setEditItem(null)} />}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <div style={{padding:'4px 24px'}}>
-            {g.items.map(item => (
-              <div key={item.id}>
-                <div className="row" style={{cursor:'default'}}>
-                  <div className="day-chip">{item.day}</div>
-                  <div className="row-body"><div className="row-title">{item.name}</div><div className="row-meta">{item.meta}</div></div>
-                  <div className="row-amt out mono">−{fmtKRW(item.amount)}</div>
-                  <button className="icon-btn" title="수정" style={{width:28,height:28}} onClick={() => setEditItem(editItem?.id===item.id?null:item)}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                  </button>
-                  <button className="icon-btn" style={{width:28, height:28}} onClick={() => { store.deleteFixed(item.id); toast('삭제되었어요'); }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  </button>
-                </div>
-                {editItem?.id === item.id && (
-                  <InlineEditFixed item={item} onSave={(patch) => { store.updateFixed(item.id, patch); toast('수정됐어요'); setEditItem(null); }} onCancel={() => setEditItem(null)} />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-// TIMELINE
+// ─────────────────────────────────────────────────────────
+// TIMELINE — hover tooltip + editable right panel
+// ─────────────────────────────────────────────────────────
 function TimelinePage() {
   const store = useStore();
+  const toast = useToast();
   const { y, m } = store.state.month;
-  const [dayOpen, setDayOpen] = uS(null);
-  const daysInMonth = new Date(y, m, 0).getDate();
-  const firstDow = new Date(y, m-1, 1).getDay();
-
-  // Build event map from fixed + expenses
-  const eventMap = {};
-  store.state.fixed.forEach(f => {
-    if (!eventMap[f.day]) eventMap[f.day] = [];
-    eventMap[f.day].push({ kind: 'out', label: f.name, amount: f.amount });
-  });
-  store.state.expenses.forEach(e => {
-    const d = new Date(e.date);
-    if (d.getFullYear() === y && d.getMonth()+1 === m) {
-      const day = d.getDate();
-      if (!eventMap[day]) eventMap[day] = [];
-      eventMap[day].push({ kind: 'out', label: e.title, amount: e.amount });
-    }
-  });
-  // Income on 25
-  if (!eventMap[25]) eventMap[25] = [];
-  eventMap[25].unshift({ kind: 'in', label: '급여', amount: store.state.income });
-
-  const cells = [];
-  for (let i = 0; i < firstDow; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-
-  const today = new Date();
-  const isCurrentMonth = today.getFullYear() === y && today.getMonth()+1 === m;
-
-  const sorted = Object.entries(eventMap).map(([d, evs]) => ({ day: Number(d), events: evs })).sort((a,b) => a.day - b.day);
+  const [hovered,setHovered]=uS(null);
+  const [selected,setSelected]=uS(null);
+  const [ttPos,setTtPos]=uS({x:0,y:0});
+  const [editId,setEditId]=uS(null);
+  const daysInMonth=new Date(y,m,0).getDate();
+  const firstDow=new Date(y,m-1,1).getDay();
+  const todayDay=new Date().getDate();
+  const isCurMonth=y===new Date().getFullYear()&&m===new Date().getMonth()+1;
+  const eventMap=uSe(()=>{
+    const map={};
+    store.state.fixed.forEach(f=>{if(!map[f.day])map[f.day]=[];map[f.day].push({kind:'out',label:f.name,amount:f.amount,id:f.id});});
+    return map;
+  },[store.state.fixed]);
+  const dayNames=['일','월','화','수','목','금','토'];
+  const selectedEvs=selected?(eventMap[selected]||[]):[];
 
   return (
     <div className="tab-content">
-      <PageHeader eyebrow="Calendar" title="Month at " titleEm="a glance." sub="자동이체와 결제일을 한 화면에서." right={<MonthSwitchLive />} />
-      <div className="grid-3-2">
+      <PageHeader eyebrow="Calendar" title="Monthly " titleEm="schedule." right={<MonthSwitchLive />} />
+      <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:16,alignItems:'start'}}>
         <div className="card">
-          <div className="card-head"><div className="card-title">{m}월 <em>캘린더</em></div>
-            <div className="gap-sm"><span className="chip pos">유입</span><span className="chip neg">지출</span></div>
+          <div className="card-title" style={{marginBottom:14}}>자금 흐름 캘린더</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3,marginBottom:4}}>
+            {dayNames.map(d=><div key={d} style={{textAlign:'center',fontSize:10.5,fontWeight:700,color:'var(--ink-4)',padding:'3px 0'}}>{d}</div>)}
           </div>
-          <div className="cal-grid">
-            {['일','월','화','수','목','금','토'].map(d => <div key={d} className="cal-h">{d}</div>)}
-            {cells.map((d, i) => {
-              if (d === null) return <div key={i} className="cal-day empty"></div>;
-              const ev = eventMap[d];
-              const isToday = isCurrentMonth && today.getDate() === d;
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3}}>
+            {Array(firstDow).fill(null).map((_,i)=><div key={'e'+i}></div>)}
+            {Array(daysInMonth).fill(null).map((_,i)=>{
+              const d=i+1; const evs=eventMap[d]||[];
+              const isToday=isCurMonth&&d===todayDay; const isSel=d===selected; const hasEv=evs.length>0;
               return (
-                <div key={i} className={'cal-day' + (isToday?' today':'') + (ev&&!isToday?' has-event':'')}
-                  onClick={() => setDayOpen(d)}>
-                  <div className="num">{d}</div>
-                  {ev && <div className="cal-dots">{ev.slice(0,3).map((e, j) => <span key={j} className="cal-dot" style={{background: e.kind==='in'?'var(--positive)':'var(--negative)'}}></span>)}</div>}
+                <div key={d} style={{
+                  aspectRatio:'1',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+                  borderRadius:8,cursor:hasEv?'pointer':'default',gap:2,
+                  background:isSel?'var(--accent)':isToday?'#FEF9C3':hasEv?'var(--paper-2)':'transparent',
+                  border:isToday?'2px solid #EAB308':isSel?'none':hasEv?'1px solid var(--line)':'none',
+                  transition:'all .12s'
+                }}
+                  onClick={()=>setSelected(d===selected?null:d)}
+                  onMouseEnter={e=>{if(hasEv){const r=e.currentTarget.getBoundingClientRect();setTtPos({x:r.left+r.width/2,y:r.bottom+6});setHovered(d);}}}
+                  onMouseLeave={()=>setHovered(null)}
+                >
+                  <span style={{fontSize:12,fontWeight:isToday||hasEv?700:400,color:isSel?'#fff':isToday?'#854D0E':hasEv?'var(--ink)':'var(--ink-3)'}}>{d}</span>
+                  {hasEv&&<div style={{width:4,height:4,borderRadius:'50%',background:isSel?'rgba(255,255,255,0.8)':'var(--negative)'}}></div>}
                 </div>
               );
             })}
           </div>
         </div>
-        <div className="card">
-          <div className="card-head"><div className="card-title">이달의 <em>일정</em></div></div>
-          {sorted.length === 0 ? <div style={{padding:30, textAlign:'center', color:'var(--ink-4)'}}>일정이 없어요</div> : sorted.slice(0,8).map((s, i) => (
-            <div key={i} className="row">
-              <div className={'day-chip ' + (s.events[0].kind==='in'?'in':'out')}>{s.day}</div>
-              <div className="row-body">
-                <div className="row-title">{s.events[0].label}</div>
-                <div className="row-meta">{s.events.length > 1 ? `외 ${s.events.length-1}건` : '단건'}</div>
-              </div>
-              <div className={'row-amt mono ' + (s.events[0].kind==='in'?'in':'out')}>{s.events[0].kind==='in'?'+':'−'}{fmtKRW(s.events.reduce((sum,e)=>sum+e.amount,0))}</div>
-            </div>
-          ))}
+
+        <div className="card" style={{minHeight:200}}>
+          {selected ? (
+            <>
+              <div className="card-head"><div className="card-title">{m}월 <em>{selected}일</em></div><button className="icon-btn" onClick={()=>setSelected(null)}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+              {selectedEvs.length===0 ? <div style={{padding:'20px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>예정 항목 없음</div>
+              : selectedEvs.map(ev=>(
+                <div key={ev.id}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderBottom:'1px solid var(--line)'}}>
+                    <div className="day-chip out" style={{width:30,height:30,fontSize:11}}>{selected}</div>
+                    <div style={{flex:1,fontSize:13.5,fontWeight:500}}>{ev.label}</div>
+                    <div className="mono fw6 neg text-sm">−{fmtKRW(ev.amount)}</div>
+                    <button className="icon-btn" style={{width:26,height:26}} onClick={()=>setEditId(editId===ev.id?null:ev.id)}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                    </button>
+                  </div>
+                  {editId===ev.id&&<InlineEditFixed item={store.state.fixed.find(f=>f.id===ev.id)||{id:ev.id,name:ev.label,day:selected,amount:ev.amount,meta:'',group:''}} onSave={(p)=>{store.updateFixed(ev.id,p);toast('수정됨');setEditId(null);}} onCancel={()=>setEditId(null)} />}
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              <div className="card-title" style={{marginBottom:10}}>이달 <em>일정 목록</em></div>
+              <div style={{fontSize:11.5,color:'var(--ink-4)',marginBottom:10}}>날짜를 클릭하면 상세 수정</div>
+              {Object.entries(eventMap).sort((a,b)=>+a[0]-+b[0]).map(([day,evs])=>(
+                <div key={day} onClick={()=>setSelected(+day)} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid var(--line)',cursor:'pointer'}}
+                  onMouseEnter={e=>e.currentTarget.style.background='var(--paper-2)'} onMouseLeave={e=>e.currentTarget.style.background=''}>
+                  <div className="day-chip out" style={{width:28,height:28,fontSize:11}}>{day}</div>
+                  <div style={{flex:1}}>{evs.map((e,i)=><div key={i} style={{fontSize:12.5,color:'var(--ink-2)'}}>{e.label}</div>)}</div>
+                  <div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--negative)'}}>−{fmtKRW(evs.reduce((s,e)=>s+e.amount,0))}</div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </div>
-      <DayDetail open={dayOpen !== null} onClose={() => setDayOpen(null)}
-        day={dayOpen} year={y} month={m}
-        events={dayOpen !== null ? (eventMap[dayOpen] || []) : []} />
+
+      {hovered&&eventMap[hovered]&&(
+        <div style={{position:'fixed',left:ttPos.x,top:ttPos.y,transform:'translateX(-50%)',background:'var(--ink)',color:'var(--bg)',padding:'10px 14px',borderRadius:10,fontSize:12.5,zIndex:999,pointerEvents:'none',maxWidth:260,boxShadow:'0 4px 20px rgba(0,0,0,.2)',lineHeight:1.7}}>
+          <div style={{fontWeight:700,marginBottom:4}}>{m}월 {hovered}일</div>
+          {(eventMap[hovered]||[]).map((e,i)=>(
+            <div key={i} style={{display:'flex',justifyContent:'space-between',gap:14}}><span>{e.label}</span><span style={{fontFamily:'var(--mono)',fontWeight:600}}>−{fmtKRW(e.amount)}</span></div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
+// ─────────────────────────────────────────────────────────
 // EXPENSES
+// ─────────────────────────────────────────────────────────
 function ExpensesPage({ openExpense }) {
   const store = useStore();
   const toast = useToast();
   const monthExp = useMonthExpenses();
-  const [filter, setFilter] = uS('all');
-  const [search, setSearch] = uS('');
-  const [dateFrom, setDateFrom] = uS('');
-  const [dateTo, setDateTo] = uS('');
-  const [cardFilter, setCardFilter] = uS('all');
-  const [sortBy, setSortBy] = uS('date');
-
-  const filtered = monthExp.filter(e => {
-    if (filter !== 'all' && e.cat !== filter) return false;
-    if (cardFilter !== 'all' && e.card !== cardFilter) return false;
-    if (search && !e.title.toLowerCase().includes(search.toLowerCase())) return false;
-    if (dateFrom && e.date < dateFrom) return false;
-    if (dateTo && e.date > dateTo) return false;
-    return true;
-  });
-  if (sortBy === 'amount') filtered.sort((a,b) => b.amount - a.amount);
-  else if (sortBy === 'amount-asc') filtered.sort((a,b) => a.amount - b.amount);
-  const total = filtered.reduce((s,e) => s+e.amount, 0);
-
-  const clearFilters = () => { setFilter('all'); setSearch(''); setDateFrom(''); setDateTo(''); setCardFilter('all'); setSortBy('date'); };
-  const hasActiveFilters = filter !== 'all' || search || dateFrom || dateTo || cardFilter !== 'all' || sortBy !== 'date';
-
-  // Group by date (skip if sorting by amount)
-  const byDate = {};
-  if (sortBy === 'date') filtered.forEach(e => { if (!byDate[e.date]) byDate[e.date] = []; byDate[e.date].push(e); });
-  const dates = Object.keys(byDate).sort().reverse();
-
-  const toneMap = {accent:'var(--accent)', indigo:'var(--indigo)', warm:'var(--warm)', pos:'var(--positive)', neg:'var(--negative)'};
-  const cats = ['all','식비','카페','생활','문화','교통','기타'];
-  const dayNames = ['일','월','화','수','목','금','토'];
-  const cardOptions = [{value:'all',label:'모든 카드'}, ...store.state.cards.map(c => ({value:c.co, label:c.co}))];
-  const sortOptions = [{value:'date',label:'날짜순'}, {value:'amount',label:'큰 금액순'}, {value:'amount-asc',label:'작은 금액순'}];
+  const [filter,setFilter]=uS('all');
+  const [search,setSearch]=uS('');
+  const [sortBy,setSortBy]=uS('date');
+  const [cardFilter,setCardFilter]=uS('all');
+  const filtered=uSe(()=>{
+    let l=[...monthExp];
+    if(filter!=='all')l=l.filter(e=>e.cat===filter);
+    if(cardFilter!=='all')l=l.filter(e=>e.card===cardFilter);
+    if(search)l=l.filter(e=>(e.title+e.cat+e.card).toLowerCase().includes(search.toLowerCase()));
+    if(sortBy==='amount')l.sort((a,b)=>b.amount-a.amount);
+    else if(sortBy==='amount-asc')l.sort((a,b)=>a.amount-b.amount);
+    return l;
+  },[monthExp,filter,cardFilter,search,sortBy]);
+  const total=filtered.reduce((s,e)=>s+e.amount,0);
+  const hasFilters=filter!=='all'||cardFilter!=='all'||search||sortBy!=='date';
+  const byDate=uSe(()=>{ const m={}; if(sortBy==='date')filtered.forEach(e=>{if(!m[e.date])m[e.date]=[];m[e.date].push(e);}); return m; },[filtered,sortBy]);
+  const dates=Object.keys(byDate).sort().reverse();
+  const toneMap={accent:'var(--accent)',indigo:'#5B6CB5',warm:'var(--warm)',pos:'var(--positive)',neg:'var(--negative)'};
+  const cardOpts=[{value:'all',label:'모든 카드'},...store.state.cards.map(c=>({value:c.co,label:c.co}))];
+  const dayNames=['일','월','화','수','목','금','토'];
 
   return (
     <div className="tab-content">
-      <PageHeader eyebrow="Spending" title="Day by " titleEm="day."
-        sub={`이달 ${monthExp.length}건 · 합계 ${fmtKRW(monthExp.reduce((s,e)=>s+e.amount,0))}`}
-        right={
-          <button className="btn btn-primary" onClick={openExpense} style={{display:'flex',alignItems:'center',gap:6}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
-            소비 추가
-          </button>
-        } />
-      {/* 모바일 플로팅 버튼 */}
-      <button onClick={openExpense} style={{
-        display:'none',
-        position:'fixed', bottom:'calc(72px + env(safe-area-inset-bottom, 0px))', right:20,
-        width:52, height:52, borderRadius:'50%',
-        background:'var(--accent)', color:'#fff', border:'none',
-        boxShadow:'0 4px 20px rgba(0,0,0,.25)',
-        cursor:'pointer', zIndex:80,
-        alignItems:'center', justifyContent:'center'
-      }} className="expense-fab">
+      <PageHeader eyebrow="Spending" title="Day by " titleEm="day." sub={`이달 ${monthExp.length}건 · ${fmtKRW(monthExp.reduce((s,e)=>s+e.amount,0))}`}
+        right={<button className="btn btn-primary" onClick={openExpense} style={{display:'flex',alignItems:'center',gap:6}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>소비 추가</button>} />
+      <button onClick={openExpense} className="expense-fab" style={{position:'fixed',bottom:'calc(72px + env(safe-area-inset-bottom,0px))',right:20,width:52,height:52,borderRadius:'50%',background:'var(--accent)',color:'#fff',border:'none',boxShadow:'0 4px 20px rgba(0,0,0,.25)',cursor:'pointer',zIndex:80,alignItems:'center',justifyContent:'center'}}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
       </button>
-
-      <div className="grid-4" style={{marginBottom:20}}>
+      <div className="grid-4" style={{marginBottom:14}}>
         <Tile label="이달 소비" num={fmtKRW(total)} sub={`${filtered.length}건`} accent="var(--negative)" />
-        <Tile label="일 평균" num={fmtKRW(Math.round(total / Math.max(new Date().getDate(),1)))} />
-        <Tile label="최다 카테고리" num={(() => {
-          const t = filtered.reduce((a,e) => { a[e.cat]=(a[e.cat]||0)+e.amount; return a; }, {});
-          const top = Object.entries(t).sort((a,b)=>b[1]-a[1])[0];
-          return top ? top[0] : '—';
-        })()} accent="var(--accent)" />
+        <Tile label="일 평균" num={fmtKRW(Math.round(total/Math.max(new Date().getDate(),1)))} />
+        <Tile label="최다 카테고리" num={(()=>{ const t=filtered.reduce((a,e)=>{a[e.cat]=(a[e.cat]||0)+e.amount;return a;},{}); const top=Object.entries(t).sort((a,b)=>b[1]-a[1])[0]; return top?top[0]:'—'; })()} accent="var(--accent)" />
         <Tile label="필터 결과" num={`${filtered.length}건`} accent="var(--positive)" />
       </div>
-
-      <div className="card" style={{marginBottom:14, padding:'14px 18px'}}>
-        <div style={{display:'flex', gap:10, flexWrap:'wrap', alignItems:'center'}}>
-          <input placeholder="🔎 내용 검색" value={search} onChange={e => setSearch(e.target.value)}
-            style={{padding:'7px 12px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--bg)', minWidth:160, flex:'0 1 200px'}} />
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} title="시작일"
-            style={{padding:'7px 10px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:12.5, background:'var(--bg)', color:'var(--ink-2)'}} />
-          <span className="text-xs muted">~</span>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} title="종료일"
-            style={{padding:'7px 10px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:12.5, background:'var(--bg)', color:'var(--ink-2)'}} />
-          <select value={cardFilter} onChange={e => setCardFilter(e.target.value)}
-            style={{padding:'7px 10px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:12.5, background:'var(--bg)', color:'var(--ink-2)', cursor:'pointer'}}>
-            {cardOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      <div className="card" style={{marginBottom:12,padding:'12px 16px'}}>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+          <input placeholder="🔎 검색" value={search} onChange={e=>setSearch(e.target.value)} style={{flex:'0 1 160px',padding:'7px 11px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:13,background:'var(--bg)'}} />
+          <select value={cardFilter} onChange={e=>setCardFilter(e.target.value)} style={{padding:'7px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:12.5,background:'var(--bg)',cursor:'pointer'}}>
+            {cardOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-            style={{padding:'7px 10px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:12.5, background:'var(--bg)', color:'var(--ink-2)', cursor:'pointer'}}>
-            {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{padding:'7px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:12.5,background:'var(--bg)',cursor:'pointer'}}>
+            <option value="date">날짜순</option><option value="amount">큰 금액</option><option value="amount-asc">작은 금액</option>
           </select>
-          {hasActiveFilters && (
-            <button className="btn btn-sm" onClick={clearFilters} style={{marginLeft:'auto'}}>필터 초기화</button>
-          )}
+          {hasFilters&&<button className="btn btn-sm" onClick={()=>{setFilter('all');setSearch('');setCardFilter('all');setSortBy('date');}}>초기화</button>}
         </div>
-        <div style={{marginTop:10, display:'flex', gap:6, flexWrap:'wrap'}}>
-          {cats.map(c => <button key={c} className={'chip ' + (filter===c?'accent':'')} onClick={() => setFilter(c)} style={{cursor:'pointer', border:filter===c?'1px solid var(--accent-line)':'1px solid var(--line)'}}>{c==='all'?'전체':c}</button>)}
+        <div style={{marginTop:8,display:'flex',gap:4,flexWrap:'wrap'}}>
+          <button onClick={()=>setFilter('all')} className={'chip '+(filter==='all'?'accent':'')} style={{cursor:'pointer',border:filter==='all'?'1px solid var(--accent-line)':'1px solid var(--line)'}}>전체</button>
+          {CAT_DEFS.map(c=>(
+            <button key={c.cat} onClick={()=>setFilter(c.cat)} className={'chip '+(filter===c.cat?'accent':'')} style={{cursor:'pointer',border:filter===c.cat?'1px solid var(--accent-line)':'1px solid var(--line)',fontSize:11.5}}>
+              {c.label.split(' ')[0]} {c.cat}
+            </button>
+          ))}
         </div>
       </div>
-
       <div className="card">
-        <div className="card-head">
-          <div className="card-title">{sortBy==='date' ? '최근 ' : '금액 '}<em>{sortBy==='date'?'소비':'정렬'}</em></div>
-          <span className="text-sm muted">{filtered.length}건</span>
-        </div>
-        {filtered.length === 0 ? (
-          <div style={{padding:50, textAlign:'center', color:'var(--ink-4)'}}>
-            <div className="serif" style={{fontSize:18, fontStyle:'italic', marginBottom:8}}>결과가 없어요</div>
-            <div className="text-sm">{hasActiveFilters?'필터를 조정해보세요':'우측 상단 "+ 소비 추가"로 첫 내역을 기록해보세요'}</div>
-          </div>
-        ) : sortBy !== 'date' ? (
-          <div style={{padding:'4px 0'}}>
-            {filtered.map(e => (
-              <ExpenseRow key={e.id} e={e} toneMap={toneMap} onDelete={() => { store.deleteExpense(e.id); toast('삭제되었어요'); }} onUpdate={(patch) => { store.updateExpense(e.id, patch); toast('수정됐어요'); }} store={store} showDate />
-            ))}
-          </div>
-        ) : dates.map(date => {
-          const d = new Date(date);
-          const dayTotal = byDate[date].reduce((s,e)=>s+e.amount,0);
+        <div className="card-head"><div className="card-title">{sortBy==='date'?'최근 ':'금액 '}<em>{sortBy==='date'?'소비':'정렬'}</em></div><span className="text-sm muted">{filtered.length}건</span></div>
+        {filtered.length===0 ? <div style={{padding:40,textAlign:'center',color:'var(--ink-4)'}}><div className="serif" style={{fontSize:18,fontStyle:'italic',marginBottom:6}}>결과가 없어요</div></div>
+        : sortBy!=='date' ? <div>{filtered.map(e=><ExpenseRow key={e.id} e={e} toneMap={toneMap} onDelete={()=>{store.deleteExpense(e.id);toast('삭제됨');}} onUpdate={(p)=>{store.updateExpense(e.id,p);toast('수정됨');}} store={store} showDate />)}</div>
+        : dates.map(date=>{
+          const d=new Date(date+'T00:00:00'); const dayTotal=byDate[date].reduce((s,e)=>s+e.amount,0);
           return (
-            <div key={date} style={{marginBottom:18}}>
-              <div className="between" style={{padding:'10px 0', borderBottom:'1px solid var(--line)', marginBottom:4}}>
-                <div style={{display:'flex', alignItems:'baseline', gap:8}}>
-                  <span className="serif" style={{fontSize:16, fontWeight:500}}>{d.getMonth()+1}월 {d.getDate()}일</span>
-                  <span className="text-xs faint">{dayNames[d.getDay()]}</span>
-                </div>
+            <div key={date} style={{marginBottom:14}}>
+              <div className="between" style={{padding:'9px 0',borderBottom:'1px solid var(--line)',marginBottom:3}}>
+                <div style={{display:'flex',alignItems:'baseline',gap:7}}><span className="serif" style={{fontSize:15,fontWeight:500}}>{d.getMonth()+1}월 {d.getDate()}일</span><span className="text-xs faint">{dayNames[d.getDay()]}</span></div>
                 <span className="mono fw6 neg text-sm">−{fmtKRW(dayTotal)}</span>
               </div>
-              {byDate[date].map(e => (
-                <ExpenseRow key={e.id} e={e} toneMap={toneMap} onDelete={() => { store.deleteExpense(e.id); toast('삭제되었어요'); }} onUpdate={(patch) => { store.updateExpense(e.id, patch); toast('수정됐어요'); }} store={store} />
-              ))}
+              {byDate[date].map(e=><ExpenseRow key={e.id} e={e} toneMap={toneMap} onDelete={()=>{store.deleteExpense(e.id);toast('삭제됨');}} onUpdate={(p)=>{store.updateExpense(e.id,p);toast('수정됨');}} store={store} />)}
             </div>
           );
         })}
@@ -588,72 +742,76 @@ function ExpensesPage({ openExpense }) {
   );
 }
 
-// CREDIT CARDS
+// ─────────────────────────────────────────────────────────
+// CREDIT CARDS — with detail panel
+// ─────────────────────────────────────────────────────────
 function CreditCardsPage({ openCard }) {
   const store = useStore();
   const toast = useToast();
-  const [editCardId, setEditCardId] = uS(null);
-  const cards = store.state.cards;
-  const totalLimit = cards.reduce((s,c) => s+c.limit, 0);
-  const totalUsed = cards.reduce((s,c) => s+c.used, 0);
+  const { y, m } = store.state.month;
+  const ym = `${y}-${String(m).padStart(2,'0')}`;
+  const [selectedCard,setSelectedCard]=uS(null);
+  const [editCardId,setEditCardId]=uS(null);
+
+  // Auto-apply scheduled payments
+  uM(()=>{
+    const today=new Date(); const todayDay=today.getDate();
+    const todayYm=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+    const key=`gf_ap_${todayYm}`; const applied=JSON.parse(localStorage.getItem(key)||'[]');
+    (store.state.cards||[]).forEach(c=>{
+      if(c.paymentDay&&c.paymentDay<=todayDay&&c.used>0){
+        const k=`${c.id}_${todayYm}`;
+        if(!applied.includes(k)){
+          const dateStr=`${todayYm}-${String(c.paymentDay).padStart(2,'0')}`;
+          const exists=store.state.expenses.find(e=>e.date===dateStr&&e.title.includes(c.co)&&e.title.includes('카드결제'));
+          if(!exists){
+            store.addExpense({date:dateStr,cat:'보험',mark:'카',tone:'neg',title:`${c.co} 카드결제 (자동)`,card:c.co,amount:c.used});
+            applied.push(k); localStorage.setItem(key,JSON.stringify(applied));
+          }
+        }
+      }
+    });
+  },[]);
 
   return (
     <div className="tab-content">
-      <PageHeader eyebrow="Cards" title="Card " titleEm="portfolio."
-        sub={`${cards.length}장 · 한도 ${fmtKRW(totalLimit,{compact:true})} · 사용 ${fmtKRW(totalUsed,{compact:true})} (${(totalUsed/totalLimit*100).toFixed(1)}%)`}
-        right={<button className="btn btn-primary" onClick={openCard}>+ 카드 추가</button>} />
-
-      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(280px, 1fr))', gap:18, marginBottom:24}}>
-        {cards.map(c => (
-          <div key={c.id} className="cc" style={{background: c.gradient}}>
-            <div style={{position:'relative', zIndex:1, display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-              <div>
-                <div className="cc-co">{c.co}</div>
-                <div className="cc-name">{c.name}</div>
+      <PageHeader eyebrow="Cards" title="Card " titleEm="portfolio." sub="카드 클릭 → 상세 정보 / 혜택 입력" right={<button className="btn btn-primary" onClick={openCard}>+ 카드 추가</button>} />
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:14,marginBottom:20}}>
+        {store.state.cards.map(c=>(
+          <div key={c.id} className="cc" style={{background:c.gradient,cursor:'pointer',transition:'transform .15s,box-shadow .15s'}}
+            onClick={()=>setSelectedCard(selectedCard?.id===c.id?null:c)}
+            onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-3px)';e.currentTarget.style.boxShadow='0 8px 30px rgba(0,0,0,.3)';}}
+            onMouseLeave={e=>{e.currentTarget.style.transform='';e.currentTarget.style.boxShadow='';}}>
+            <div style={{position:'relative',zIndex:1,display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:12}}>
+              <div><div className="cc-co">{c.co}</div><div className="cc-name">{c.name}</div></div>
+              <div style={{display:'flex',gap:5}}>
+                <span style={{background:'rgba(255,255,255,0.15)',color:'rgba(255,255,255,0.8)',padding:'2px 7px',borderRadius:5,fontSize:11}}>상세</span>
+                <button onClick={e=>{e.stopPropagation();if(confirm('삭제?')){store.deleteCard(c.id);toast('삭제됨');}}} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'rgba(255,255,255,0.7)',width:22,height:22,borderRadius:5,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                </button>
               </div>
-              <button onClick={() => { if(confirm('카드를 삭제할까요?')) { store.deleteCard(c.id); toast('삭제되었어요'); }}}
-                style={{background:'rgba(255,255,255,0.15)', border:'none', color:'rgba(255,255,255,0.7)', width:24, height:24, borderRadius:6, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center'}}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>
-              </button>
             </div>
-            <div className="cc-foot"><span>•••• •••• •••• {c.last4}</span><span>한도 ₩{(c.limit/10000).toFixed(0)}만</span></div>
+            <div className="cc-foot"><span>•••• {c.last4}</span><span>결제일 {c.paymentDay}일</span></div>
           </div>
         ))}
       </div>
-
+      {selectedCard&&<CardDetailPanel c={selectedCard} store={store} toast={toast} onClose={()=>setSelectedCard(null)} />}
       <div className="card">
         <div className="card-head"><div className="card-title">결제 <em>예정</em></div></div>
-        {cards.map(c => {
-          const pct = (c.used / c.limit) * 100;
+        {store.state.cards.map(c=>{
+          const pct=c.limit?(c.used/c.limit)*100:0;
           return (
             <div key={c.id}>
               <div className="row">
-                <div className="cat-mark" style={{background:'var(--paper-2)', color:'var(--ink)', fontFamily:'var(--mono)', fontSize:11, fontStyle:'normal'}}>•••{c.last4.slice(-2)}</div>
-                <div className="row-body" style={{maxWidth:200}}><div className="row-title">{c.co}</div><div className="row-meta">{c.name}</div></div>
-                <div style={{flex:1, minWidth:0}}><div className="bar"><div className="bar-fill" style={{width:pct+'%', background:'var(--accent)'}}></div></div></div>
-                <div className="mono fw6 text-sm" style={{minWidth:100, textAlign:'right'}}>{fmtKRW(c.used)} / {fmtKRW(c.limit,{compact:true})}</div>
-                <button className="icon-btn" title="사용액 수정" style={{width:28,height:28}} onClick={() => setEditCardId(editCardId===c.id?null:c.id)}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                <div className="cat-mark" style={{background:'var(--paper-2)',color:'var(--ink)',fontFamily:'var(--mono)',fontSize:11}}>{c.co.slice(0,2)}</div>
+                <div className="row-body" style={{maxWidth:200}}><div className="row-title">{c.co}</div><div className="row-meta">{c.name} · {c.paymentDay}일</div></div>
+                <div style={{flex:1}}><div className="bar"><div className="bar-fill" style={{width:pct+'%',background:'var(--accent)'}}></div></div></div>
+                <div className="mono fw6 text-sm" style={{minWidth:110,textAlign:'right'}}>{fmtKRW(c.used)} / {fmtKRW(c.limit,{compact:true})}</div>
+                <button className="icon-btn" style={{width:28,height:28}} onClick={()=>setEditCardId(editCardId===c.id?null:c.id)}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                 </button>
               </div>
-              {editCardId === c.id && (
-                <div style={{display:'flex', gap:8, alignItems:'center', padding:'10px 14px', background:'var(--paper-2)', borderRadius:'var(--r-sm)', margin:'4px 0', flexWrap:'wrap'}}>
-                  <span style={{fontSize:12, fontWeight:600, color:'var(--ink-3)'}}>이달 사용액 (원)</span>
-                  <input type="number" defaultValue={c.used} id={`cused-${c.id}`}
-                    style={{flex:'1 1 140px', padding:'7px 10px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, fontFamily:'var(--mono)', background:'var(--bg)'}} />
-                  <span style={{fontSize:12, fontWeight:600, color:'var(--ink-3)'}}>한도 (원)</span>
-                  <input type="number" defaultValue={c.limit} id={`climit-${c.id}`}
-                    style={{flex:'1 1 140px', padding:'7px 10px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, fontFamily:'var(--mono)', background:'var(--bg)'}} />
-                  <button className="btn btn-primary btn-sm" onClick={() => {
-                    const used = parseInt(document.getElementById(`cused-${c.id}`)?.value);
-                    const limit = parseInt(document.getElementById(`climit-${c.id}`)?.value);
-                    store.updateCard(c.id, { used: isNaN(used)?c.used:used, limit: isNaN(limit)?c.limit:limit });
-                    toast('카드 정보가 수정됐어요');
-                    setEditCardId(null);
-                  }}>저장</button>
-                  <button className="btn btn-sm" onClick={() => setEditCardId(null)}>취소</button>
-                </div>
-              )}
+              {editCardId===c.id&&<InlineCardEdit c={c} onSave={(p)=>{store.updateCard(c.id,p);toast('수정됨');setEditCardId(null);}} onCancel={()=>setEditCardId(null)} />}
             </div>
           );
         })}
@@ -662,132 +820,155 @@ function CreditCardsPage({ openCard }) {
   );
 }
 
+function CardDetailPanel({c,store,toast,onClose}){
+  const [benefits,setBenefits]=uS(c.benefits||'');
+  const [annualFee,setFee]=uS(c.annualFee||0);
+  const [memo,setMemo]=uS(c.memo||'');
+  return (
+    <div className="card" style={{marginBottom:16,borderTop:'3px solid var(--accent)'}}>
+      <div className="card-head">
+        <div><div className="card-title">{c.co} <em>{c.name}</em></div><div className="card-sub">카드 상세 · 클릭으로 수정</div></div>
+        <button className="icon-btn" onClick={onClose}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:14}}>
+        <div style={{padding:'12px',background:'var(--paper-2)',borderRadius:'var(--r-md)'}}><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>결제일</div><div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700}}>{c.paymentDay}일</div></div>
+        <div style={{padding:'12px',background:'var(--paper-2)',borderRadius:'var(--r-md)'}}><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>이달 사용액</div><div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:'var(--negative)'}}>{fmtKRW(c.used)}</div></div>
+        <div style={{padding:'12px',background:'var(--paper-2)',borderRadius:'var(--r-md)'}}><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>한도</div><div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700}}>{fmtKRW(c.limit)}</div></div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+        <div><div style={{fontSize:11,fontWeight:600,color:'var(--ink-3)',marginBottom:5}}>주요 혜택</div>
+          <textarea value={benefits} onChange={e=>setBenefits(e.target.value)} rows={3} placeholder="예: 온라인 1.5% 적립, 주유 할인"
+            style={{width:'100%',padding:'9px 11px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:13,background:'var(--bg)',resize:'vertical',fontFamily:'var(--sans)'}} /></div>
+        <div>
+          <div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:'var(--ink-3)',marginBottom:5}}>연회비 (원)</div>
+            <input type="number" value={annualFee} onChange={e=>setFee(e.target.value)} style={{width:'100%',padding:'9px 11px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:13,fontFamily:'var(--mono)',background:'var(--bg)'}} /></div>
+          <div><div style={{fontSize:11,fontWeight:600,color:'var(--ink-3)',marginBottom:5}}>메모</div>
+            <input value={memo} onChange={e=>setMemo(e.target.value)} placeholder="기타 메모" style={{width:'100%',padding:'9px 11px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:13,background:'var(--bg)'}} /></div>
+        </div>
+      </div>
+      <button className="btn btn-primary" style={{justifyContent:'center'}} onClick={()=>{store.updateCard(c.id,{benefits,annualFee:+annualFee,memo});toast('저장됨');}}>저장</button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
 // ANALYTICS
+// ─────────────────────────────────────────────────────────
 function AnalyticsPage() {
-  const [q, setQ] = uS('');
   const store = useStore();
   const monthExp = useMonthExpenses();
-  const [history, setHistory] = uS([
-    { role: 'ai', text: '안녕하세요. 4월 데이터를 기반으로 질문에 답해드릴게요.' },
-  ]);
-  const send = () => {
-    if (!q.trim()) return;
-    const userQ = q;
-    setHistory(h => [...h, { role: 'user', text: userQ }, { role: 'ai', text: '분석 중…' }]);
-    setQ('');
-    const summary = `소득 ${fmtKRW(store.state.income)}, 고정비 ${fmtKRW(store.state.fixed.reduce((s,f)=>s+f.amount,0))}, 이달 소비 ${fmtKRW(monthExp.reduce((s,e)=>s+e.amount,0))}, 소비 건수 ${monthExp.length}건.`;
-    window.claude?.complete(`당신은 한국 개인재정 분석가입니다. 사용자 데이터: ${summary}\n사용자 질문: ${userQ}\n한국어로 2-3문장 답하세요.`)
-      .then(answer => setHistory(h => h.slice(0, -1).concat({ role: 'ai', text: answer })))
-      .catch(() => setHistory(h => h.slice(0, -1).concat({ role: 'ai', text: '분석에 실패했습니다.' })));
-  };
-
+  const catTotals=uSe(()=>monthExp.reduce((a,e)=>{a[e.cat]=(a[e.cat]||0)+e.amount;return a;},{}), [monthExp]);
+  const monthTotals=uSe(()=>{
+    const m={}; store.state.expenses.forEach(e=>{const ym=e.date.slice(0,7);m[ym]=(m[ym]||0)+e.amount;});
+    return Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0])).slice(-6);
+  },[store.state.expenses]);
+  const catColors={'식사':'var(--accent)','카페':'var(--warm)','마트':'var(--positive)','교통':'var(--negative)'};
+  const catSegs=Object.entries(catTotals).map(([l,v])=>({label:l,value:v,color:catColors[l]||'var(--ink-3)'}));
+  const maxMonth=Math.max(...monthTotals.map(([,v])=>v),1);
   return (
     <div className="tab-content">
-      <PageHeader eyebrow="Analyze" title="Understand " titleEm="your money." sub="AI가 데이터를 읽고 답해드립니다." />
-
-      <div className="ai-card">
-        <div style={{display:'flex', alignItems:'flex-start', gap:14}}>
-          <div className="cat-mark" style={{background:'var(--ink)', color:'var(--bg)', fontStyle:'italic'}}>AI</div>
-          <div style={{flex:1}}>
-            <div className="serif" style={{fontSize:20, fontWeight:500, letterSpacing:'-0.015em'}}>재정 분석 <em style={{color:'var(--ink-3)'}}>대화로 묻기</em></div>
-            <div className="text-sm muted" style={{marginTop:4}}>실제 입력한 데이터를 기반으로 분석합니다.</div>
-          </div>
-        </div>
-        <div style={{marginTop:18, display:'flex', flexDirection:'column', gap:12}}>
-          {history.map((m, i) => (
-            <div key={i} style={{display:'flex', justifyContent: m.role==='user'?'flex-end':'flex-start'}}>
-              <div style={{maxWidth:'80%', padding:'12px 16px', borderRadius:'var(--r-md)',
-                background: m.role==='user'?'var(--ink)':'var(--paper)', color: m.role==='user'?'var(--bg)':'var(--ink)',
-                border: m.role==='ai'?'1px solid var(--line)':'none', fontSize:13.5, lineHeight:1.6}}>{m.text}</div>
+      <PageHeader eyebrow="Insights" title="Spending " titleEm="patterns." />
+      <div className="grid-3-2" style={{marginBottom:16}}>
+        <div className="card">
+          <div className="card-head"><div className="card-title">카테고리별 <em>분포</em></div></div>
+          {catSegs.length===0?<div style={{padding:'30px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>이달 소비 없음</div>:(
+            <div style={{display:'flex',alignItems:'center',gap:18,marginTop:6}}>
+              <Donut segments={catSegs} center={<><div className="text-xs muted">합계</div><div className="serif" style={{fontSize:17,fontWeight:500,marginTop:2}}>{fmtKRW(monthExp.reduce((s,e)=>s+e.amount,0),{compact:true})}</div></>} />
+              <div style={{flex:1,fontSize:12.5}}>
+                {catSegs.sort((a,b)=>b.value-a.value).slice(0,6).map((s,i)=>(
+                  <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'4px 0'}}>
+                    <span style={{width:7,height:7,borderRadius:'50%',background:s.color,flexShrink:0}}></span>
+                    <span style={{flex:1,fontSize:12}}>{s.label}</span>
+                    <span className="mono fw6" style={{fontSize:12}}>{fmtKRW(s.value)}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
+          )}
         </div>
-        <div className="ai-input-wrap" style={{marginTop:16}}>
-          <input className="ai-input" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key==='Enter' && send()} placeholder="질문을 입력하세요…" />
-          <button className="btn btn-accent" onClick={send}>분석</button>
-        </div>
-        <div style={{display:'flex', gap:6, marginTop:14, flexWrap:'wrap'}}>
-          {['이달 소비 패턴은?', '절약 가능한 항목은?', '다음 달 흑자 예상?'].map((s, i) => (
-            <button key={i} className="chip" style={{cursor:'pointer'}} onClick={() => setQ(s)}>{s}</button>
-          ))}
+        <div className="card">
+          <div className="card-head"><div className="card-title">월별 <em>소비 추이</em></div></div>
+          {monthTotals.length<2?<div style={{padding:'30px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>데이터 부족</div>:(
+            <div style={{marginTop:10}}>
+              {monthTotals.map(([ym,total])=>(
+                <div key={ym} style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+                  <div style={{width:44,fontSize:11.5,fontFamily:'var(--mono)',color:'var(--ink-3)'}}>{ym.slice(5)}월</div>
+                  <div style={{flex:1,height:6,background:'var(--paper-2)',borderRadius:3,overflow:'hidden'}}><div style={{height:'100%',background:'var(--accent)',borderRadius:3,width:(total/maxMonth*100)+'%',transition:'width .5s'}}></div></div>
+                  <div style={{width:70,fontSize:12,fontFamily:'var(--mono)',fontWeight:600,textAlign:'right'}}>{fmtKRW(total,{compact:true})}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-
-// ── Inline edit helper components ──────────────────────────
-
-function InlineEditFixed({ item, onSave, onCancel }) {
-  const [name, setName] = uS(item.name);
-  const [meta, setMeta] = uS(item.meta);
-  const [day, setDay]   = uS(item.day);
-  const [amount, setAmount] = uS(item.amount);
-  const inpStyle = {padding:'7px 10px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--bg)', fontFamily:'var(--sans)'};
+// ─────────────────────────────────────────────────────────
+// SHARED HELPERS
+// ─────────────────────────────────────────────────────────
+function InlineEditFixed({item,onSave,onCancel}){
+  const [name,setName]=uS(item.name); const [meta,setMeta]=uS(item.meta||'');
+  const [day,setDay]=uS(item.day||''); const [amount,setAmt]=uS(item.amount||'');
+  const [group,setGroup]=uS(item.group||'기타');
+  const st={padding:'7px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:12.5,background:'var(--bg)',width:'100%'};
   return (
-    <div style={{padding:'12px 14px', background:'var(--accent-soft)', borderRadius:'var(--r-sm)', margin:'4px 0', display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(130px, 1fr))', gap:8}}>
-      <div><div style={{fontSize:10.5, fontWeight:600, color:'var(--ink-4)', marginBottom:3}}>항목명</div><input value={name} onChange={e=>setName(e.target.value)} style={{...inpStyle, width:'100%'}} /></div>
-      <div><div style={{fontSize:10.5, fontWeight:600, color:'var(--ink-4)', marginBottom:3}}>메모</div><input value={meta} onChange={e=>setMeta(e.target.value)} style={{...inpStyle, width:'100%'}} /></div>
-      <div><div style={{fontSize:10.5, fontWeight:600, color:'var(--ink-4)', marginBottom:3}}>날짜(일)</div><input type="number" min="1" max="31" value={day} onChange={e=>setDay(+e.target.value)} style={{...inpStyle, width:'100%'}} /></div>
-      <div><div style={{fontSize:10.5, fontWeight:600, color:'var(--ink-4)', marginBottom:3}}>금액(원)</div><input type="number" value={amount} onChange={e=>setAmount(+e.target.value)} style={{...inpStyle, width:'100%', fontFamily:'var(--mono)'}} /></div>
-      <div style={{display:'flex', gap:6, alignItems:'flex-end'}}>
-        <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={() => onSave({name,meta,day,amount})}>저장</button>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(110px,1fr))',gap:6,padding:'10px 12px',background:'var(--accent-soft)',borderRadius:'var(--r-sm)',margin:'4px 0',alignItems:'end'}}>
+      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>항목명</div><input value={name} onChange={e=>setName(e.target.value)} style={st}/></div>
+      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>메모</div><input value={meta} onChange={e=>setMeta(e.target.value)} style={st}/></div>
+      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>일</div><input type="number" min="1" max="31" value={day} onChange={e=>setDay(e.target.value)} style={st}/></div>
+      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>금액</div><input type="number" value={amount} onChange={e=>setAmt(e.target.value)} style={{...st,fontFamily:'var(--mono)'}}/></div>
+      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>그룹</div><input value={group} onChange={e=>setGroup(e.target.value)} style={st}/></div>
+      <div style={{display:'flex',gap:5,alignItems:'flex-end'}}>
+        <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={()=>onSave({name,meta,day:+day,amount:+amount,group})}>저장</button>
         <button className="btn btn-sm" style={{flex:1}} onClick={onCancel}>취소</button>
       </div>
     </div>
   );
 }
 
-function ExpenseRow({ e, toneMap, onDelete, onUpdate, store, showDate }) {
-  const [editing, setEditing] = uS(false);
-  const [title, setTitle]   = uS(e.title);
-  const [amount, setAmount] = uS(e.amount);
-  const [cat, setCat]       = uS(e.cat);
-  const [card, setCard]     = uS(e.card);
-  const cats = ['식비','카페','생활','문화','교통','기타'];
-  const catTone = {식비:'indigo',카페:'warm',생활:'pos',문화:'accent',교통:'neg',기타:'indigo'};
-  const catMark = {식비:'식',카페:'커',생활:'생',문화:'문',교통:'교',기타:'기'};
-  const inpSt = {padding:'6px 9px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:12.5, background:'var(--bg)', fontFamily:'var(--sans)'};
+function ExpenseRow({e,toneMap,onDelete,onUpdate,store,showDate}){
+  const [editing,setEditing]=uS(false);
+  const [title,setTitle]=uS(e.title); const [amount,setAmount]=uS(e.amount);
+  const [cat,setCat]=uS(e.cat); const [card,setCard]=uS(e.card);
+  const inpSt={padding:'6px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:12.5,background:'var(--bg)',fontFamily:'var(--sans)'};
+  const def=getCatDef(cat);
   return (
     <div>
       <div className="expense-row">
-        <div className="cat-mark" style={{background:'color-mix(in oklab, '+toneMap[e.tone]+' 12%, transparent)', color:toneMap[e.tone]}}>{e.mark}</div>
-        <div style={{flex:1, minWidth:0}}>
+        <div className="cat-mark" style={{background:'color-mix(in oklab, '+(toneMap[def.tone]||'var(--accent)')+' 12%, transparent)',color:toneMap[def.tone]||'var(--accent)'}}>{def.mark}</div>
+        <div style={{flex:1,minWidth:0}}>
           <div className="row-title">{e.title}</div>
-          <div style={{display:'flex', gap:6, marginTop:4, flexWrap:'wrap'}}>
-            <span className="chip">{e.cat}</span>
-            <span className="chip">{e.card}</span>
-            {showDate && <span className="chip" style={{color:'var(--ink-4)'}}>{e.date.slice(5)}</span>}
+          <div style={{display:'flex',gap:5,marginTop:4,flexWrap:'wrap'}}>
+            <span className="chip">{e.cat}</span><span className="chip">{e.card}</span>
+            {showDate&&<span className="chip" style={{color:'var(--ink-4)'}}>{e.date.slice(5)}</span>}
           </div>
         </div>
-        <button className="icon-btn" style={{width:28,height:28}} onClick={() => setEditing(!editing)}>
+        <button className="icon-btn" style={{width:28,height:28}} onClick={()=>setEditing(!editing)}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
         </button>
-        <button className="icon-btn" style={{width:28, height:28}} onClick={onDelete}>
+        <button className="icon-btn" style={{width:28,height:28}} onClick={onDelete}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
         </button>
         <div className="mono fw6 neg">−{fmtKRW(e.amount)}</div>
       </div>
-      {editing && (
-        <div style={{padding:'10px 12px', background:'var(--accent-soft)', borderRadius:'var(--r-sm)', margin:'4px 0', display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:8}}>
-          <div><div style={{fontSize:10.5,fontWeight:600,color:'var(--ink-4)',marginBottom:3}}>내용</div><input value={title} onChange={e=>setTitle(e.target.value)} style={{...inpSt,width:'100%'}} /></div>
-          <div><div style={{fontSize:10.5,fontWeight:600,color:'var(--ink-4)',marginBottom:3}}>금액</div><input type="number" value={amount} onChange={e=>setAmount(+e.target.value)} style={{...inpSt,width:'100%',fontFamily:'var(--mono)'}} /></div>
+      {editing&&(
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:8,padding:'10px 12px',background:'var(--accent-soft)',borderRadius:'var(--r-sm)',margin:'4px 0'}}>
+          <div><div style={{fontSize:10.5,fontWeight:600,color:'var(--ink-4)',marginBottom:3}}>내용</div><input value={title} onChange={e=>setTitle(e.target.value)} style={{...inpSt,width:'100%'}}/></div>
+          <div><div style={{fontSize:10.5,fontWeight:600,color:'var(--ink-4)',marginBottom:3}}>금액</div><input type="number" value={amount} onChange={e=>setAmount(+e.target.value)} style={{...inpSt,width:'100%',fontFamily:'var(--mono)'}}/></div>
           <div><div style={{fontSize:10.5,fontWeight:600,color:'var(--ink-4)',marginBottom:3}}>카테고리</div>
             <select value={cat} onChange={e=>setCat(e.target.value)} style={{...inpSt,width:'100%',cursor:'pointer'}}>
-              {cats.map(c=><option key={c} value={c}>{c}</option>)}
+              {CAT_DEFS.map(c=><option key={c.cat} value={c.cat}>{c.label}</option>)}
             </select>
           </div>
           <div><div style={{fontSize:10.5,fontWeight:600,color:'var(--ink-4)',marginBottom:3}}>카드</div>
             <select value={card} onChange={e=>setCard(e.target.value)} style={{...inpSt,width:'100%',cursor:'pointer'}}>
-              {store.state.cards.map(c=><option key={c.id} value={c.co}>{c.co}</option>)}
+              {(store.state.cards||[]).map(c=><option key={c.id} value={c.co}>{c.co}</option>)}
             </select>
           </div>
           <div style={{display:'flex',gap:6,alignItems:'flex-end'}}>
-            <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={()=>{
-              onUpdate({title, amount, cat, tone:catTone[cat]||'indigo', mark:catMark[cat]||'기', card});
-              setEditing(false);
-            }}>저장</button>
+            <button className="btn btn-primary btn-sm" style={{flex:1}} onClick={()=>{const d=getCatDef(cat);onUpdate({title,amount,cat,tone:d.tone,mark:d.mark,card});setEditing(false);}}>저장</button>
             <button className="btn btn-sm" style={{flex:1}} onClick={()=>setEditing(false)}>취소</button>
           </div>
         </div>
@@ -796,4 +977,9 @@ function ExpenseRow({ e, toneMap, onDelete, onUpdate, store, showDate }) {
   );
 }
 
-Object.assign(window, { DashboardPage, AccountsPage, FlowMapPage, FixedCostsPage, TimelinePage, ExpensesPage, CreditCardsPage, AnalyticsPage });
+Object.assign(window, {
+  DashboardPage, AccountsPage, FlowMapPage, FixedCostsPage,
+  TimelinePage, ExpensesPage, CreditCardsPage, AnalyticsPage,
+  CAT_DEFS, getCatDef, useMonthExpenses, MonthSwitchLive,
+  InlineEditFixed, ExpenseRow
+});

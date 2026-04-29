@@ -29,10 +29,54 @@ const SEED = {
     { id: 'f7', group: '보험·기타', day: 22, name: '연금저축',                  meta: '한화생명',          amount: 178000  },
   ],
   expenses: [
-    { id: 'e1', date: '2026-04-26', cat: '식비', tone: 'indigo', mark: '식', title: '점심 식사 — 평양면옥', card: '롯데카드', amount: 12000 },
+    { id: 'e1', date: '2026-04-26', cat: '식사', tone: 'indigo', mark: '식', title: '점심 식사 — 평양면옥', card: '롯데카드', amount: 12000 },
     { id: 'e2', date: '2026-04-26', cat: '카페', tone: 'warm',   mark: '커', title: 'Anthracite Coffee',    card: '신한카드', amount: 5500  },
     { id: 'e3', date: '2026-04-26', cat: '생활', tone: 'pos',    mark: '생', title: 'SSG 마트 장보기',      card: '농협카드', amount: 54500 },
   ],
+  // 월별 급여 입력: {YYYY-MM: amount}
+  monthlySalaries: {},
+  // 월별 카드 청구액: {YYYY-MM: {total, breakdown:{cardId:amount}}}
+  monthlyCardBills: {},
+  // 고정비 월별 토글: {YYYY-MM: {fixedId: false}} — false면 그 달 제외
+  fixedOverrides: {},
+  // 카드 소비 예산
+  cardBudget: 1500000,
+  // 통장별 자금흐름 (per-bank flows)
+  bankFlows: {
+    woori:    [
+      {id:'wf1', day:10, kind:'out', desc:'하나은행 이체',    meta:'이벤트자금',   amount:500000},
+      {id:'wf2', day:10, kind:'out', desc:'기업은행 이체',    meta:'세금대비',     amount:500000},
+      {id:'wf3', day:14, kind:'out', desc:'카드 결제',        meta:'롯데·농협·신한', amount:620000},
+      {id:'wf4', day:25, kind:'out', desc:'신한은행 이체',    meta:'FNA 주거래',   amount:500000},
+      {id:'wf5', day:27, kind:'out', desc:'농협은행 이체',    meta:'주담대 재원',  amount:2500000},
+      {id:'wf6', day:30, kind:'out', desc:'와이프 계좌 이체', meta:'생활비',       amount:1000000},
+    ],
+    shinhan:  [
+      {id:'sf1', day:10, kind:'out', desc:'케이뱅크 이체',    meta:'적금',         amount:500000},
+      {id:'sf2', day:16, kind:'in',  desc:'(주)연형 급여',    meta:'정기 급여',    amount:2300000},
+      {id:'sf3', day:20, kind:'out', desc:'어머니 계좌 이체', meta:'매달 자동이체',amount:500000},
+      {id:'sf4', day:30, kind:'out', desc:'노란우산공제회',   meta:'매달 30일',    amount:420000},
+    ],
+    nonghyup: [
+      {id:'nf1', day:13, kind:'out', desc:'삼성화재 실비보험',meta:'자동출금',     amount:220000},
+      {id:'nf2', day:14, kind:'out', desc:'농협카드 결제',    meta:'약 30~40만',   amount:350000},
+      {id:'nf3', day:25, kind:'out', desc:'암보험1',          meta:'매달 25일',    amount:37900},
+      {id:'nf4', day:25, kind:'out', desc:'한화 뇌심혈관보험',meta:'매달 25일',    amount:47000},
+      {id:'nf5', day:26, kind:'out', desc:'농협적금',         meta:'매달 26일',    amount:300000},
+      {id:'nf6', day:27, kind:'in',  desc:'우리은행 입금',    meta:'주담대 재원',  amount:2500000},
+      {id:'nf7', day:30, kind:'out', desc:'주담대 원리금',    meta:'정기 상환',    amount:1300000},
+    ],
+    kbank:    [
+      {id:'kf1', day:7,  kind:'in',  desc:'신한은행2 입금',   meta:'적금 자동이체',amount:500000},
+      {id:'kf2', day:10, kind:'out', desc:'케이뱅크 적금',    meta:'이체',         amount:500000},
+    ],
+    ibk:      [
+      {id:'if1', day:10, kind:'in',  desc:'우리은행 입금',    meta:'세금대비',     amount:500000},
+    ],
+    hana:     [
+      {id:'hf1', day:10, kind:'in',  desc:'우리은행 입금',    meta:'이벤트자금',   amount:500000},
+    ],
+  },
 };
 
 // ── localStorage helpers ──────────────────────────
@@ -204,6 +248,28 @@ function StoreProvider({ children }) {
     addAccount:    (a)  => setState(s => ({ ...s, accounts: [...s.accounts, { ...a, id: 'a' + Date.now() }] })),
     deleteAccount: (id) => setState(s => ({ ...s, accounts: s.accounts.filter(a => a.id !== id) })),
     setIncome:     (n)  => setState(s => ({ ...s, income: n })),
+    setSalaryForMonth: (ym, amount) => setState(s => ({ ...s, monthlySalaries: {...(s.monthlySalaries||{}), [ym]: amount} })),
+    setCardBillForMonth: (ym, data) => setState(s => ({ ...s, monthlyCardBills: {...(s.monthlyCardBills||{}), [ym]: data} })),
+    setFixedOverride: (ym, id, enabled) => setState(s => {
+      const fo = {...(s.fixedOverrides||{})};
+      if (!fo[ym]) fo[ym] = {};
+      if (enabled) delete fo[ym][id]; else fo[ym][id] = false;
+      return { ...s, fixedOverrides: fo };
+    }),
+    setCardBudget: (n) => setState(s => ({ ...s, cardBudget: n })),
+    setBankFlow: (bankId, flows) => setState(s => ({ ...s, bankFlows: {...(s.bankFlows||{}), [bankId]: flows} })),
+    updateBankFlow: (bankId, id, patch) => setState(s => {
+      const flows = (s.bankFlows||{})[bankId] || [];
+      return { ...s, bankFlows: { ...(s.bankFlows||{}), [bankId]: flows.map(f => f.id===id ? {...f,...patch} : f) } };
+    }),
+    deleteBankFlow: (bankId, id) => setState(s => {
+      const flows = (s.bankFlows||{})[bankId] || [];
+      return { ...s, bankFlows: { ...(s.bankFlows||{}), [bankId]: flows.filter(f => f.id!==id) } };
+    }),
+    addBankFlow: (bankId, flow) => setState(s => {
+      const flows = (s.bankFlows||{})[bankId] || [];
+      return { ...s, bankFlows: { ...(s.bankFlows||{}), [bankId]: [...flows, {...flow, id:'bf'+Date.now()}] } };
+    }),
     reset: () => { localStorage.removeItem(STORE_KEY); setStateRaw(SEED); },
     exportData: () => state,
     importData: (data) => {
