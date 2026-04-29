@@ -62,12 +62,25 @@ function DashboardPage({ openExpense, openCard }) {
   const woori    = store.state.accounts.find(a=>a.id==='woori')||store.state.accounts[0];
   const curMinus = woori?.balance||0;
   const overrides = (store.state.fixedOverrides||{})[ym]||{};
+
+  // 날짜 기반: 완료(지난 것) vs 예정(앞으로)
+  const now2 = new Date();
+  const todayDay2 = now2.getDate();
+  const isCurMonth = y===now2.getFullYear() && m===now2.getMonth()+1;
   const activeFixed = store.state.fixed.filter(f=>overrides[f.id]!==false);
-  const fixedTotal  = activeFixed.reduce((s,f)=>s+f.amount,0);
+  const pendingFixed = isCurMonth
+    ? activeFixed.filter(f => f.day >= todayDay2)
+    : activeFixed;
+  const completedFixed = isCurMonth
+    ? activeFixed.filter(f => f.day < todayDay2)
+    : [];
+  const fixedTotal   = activeFixed.reduce((s,f)=>s+f.amount,0);
+  const pendingFixedTotal = pendingFixed.reduce((s,f)=>s+f.amount,0);
+  const completedFixedTotal = completedFixed.reduce((s,f)=>s+f.amount,0);
   const cardBill    = ((store.state.monthlyCardBills||{})[ym])||{};
   const cardBillTotal = cardBill.total||0;
   const salary    = ((store.state.monthlySalaries||{})[ym])||store.state.income;
-  const projected = curMinus + salary - fixedTotal - cardBillTotal;
+  const projected = curMinus + salary - pendingFixedTotal - cardBillTotal;
   const expTotal  = monthExp.reduce((s,e)=>s+e.amount,0);
   const cardBudget= store.state.cardBudget||1500000;
   const budgetPct = Math.min((expTotal/cardBudget)*100,100);
@@ -129,7 +142,11 @@ function DashboardPage({ openExpense, openCard }) {
           {editBtnEl(()=>setEditFixed(true))}
           <div style={lbl}>이번달 고정비</div>
           <div style={{...num,color:'var(--warm)'}}>{fmtKRW(fixedTotal)}</div>
-          <div style={{fontSize:12,color:'var(--ink-4)',marginTop:6}}>{activeFixed.length}개 항목 합산</div>
+          <div style={{fontSize:11.5,color:'var(--ink-4)',marginTop:6,lineHeight:1.7}}>
+            {isCurMonth ? (
+              <>완료 {fmtKRW(completedFixedTotal,{compact:true})} · 예정 {fmtKRW(pendingFixedTotal,{compact:true})}</>
+            ) : `${activeFixed.length}개 항목`}
+          </div>
           {editFixed && (
             <div style={{position:'fixed',inset:0,background:'rgba(26,23,20,0.55)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={()=>setEditFixed(false)}>
               <div onClick={e=>e.stopPropagation()} style={{background:'var(--paper)',borderRadius:'var(--r-lg)',padding:24,width:'100%',maxWidth:400,maxHeight:'80vh',overflow:'auto',boxShadow:'var(--shadow-lg)'}}>
@@ -161,47 +178,95 @@ function DashboardPage({ openExpense, openCard }) {
           <div style={lbl}>30일 예상 마이너스</div>
           <div style={{...num,color:projected>=curMinus?'var(--positive)':'var(--negative)'}}>{fmtKRW(projected)}</div>
           <div style={{fontSize:11,color:'var(--ink-4)',marginTop:6,lineHeight:1.7}}>
-            현재{fmtKRW(curMinus,{compact:true})} + 급여{fmtKRW(salary,{compact:true})} − 고정{fmtKRW(fixedTotal,{compact:true})} − 카드{fmtKRW(cardBillTotal,{compact:true})}
+            현재{fmtKRW(curMinus,{compact:true})} + 급여{fmtKRW(salary,{compact:true})} − 예정고정{fmtKRW(pendingFixedTotal,{compact:true})} − 카드{fmtKRW(cardBillTotal,{compact:true})}
           </div>
         </div>
       </div>
 
-      {/* 카드 소비 현황 */}
+      {/* 카드 소비 현황 — 자동결제 선예약 + 잔여 소비가능액 */}
       <div className="card" style={{marginBottom:16}}>
         <div className="card-head">
-          <div><div className="card-title">이달 <em>카드 소비</em></div><div className="card-sub">{monthExp.length}건 · {fmtKRW(expTotal)}</div></div>
-          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <div><div className="card-title">이달 <em>카드 소비</em></div><div className="card-sub">{monthExp.length}건</div></div>
+          <div style={{display:'flex', gap:8, alignItems:'center'}}>
             {editBudget ? (
-              <div style={{display:'flex',gap:6}}>
-                <input type="number" value={budgetVal} onChange={e=>setBudgetVal(e.target.value)} placeholder="예산" style={{width:110,padding:'6px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:13,fontFamily:'var(--mono)',background:'var(--bg)'}} />
+              <div style={{display:'flex', gap:6}}>
+                <input type="number" value={budgetVal} onChange={e=>setBudgetVal(e.target.value)} placeholder="전체예산"
+                  style={{width:100, padding:'6px 9px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, fontFamily:'var(--mono)', background:'var(--bg)'}} />
                 <button className="btn btn-primary btn-sm" onClick={()=>{const v=parseInt(budgetVal);if(!isNaN(v)){store.setCardBudget(v);toast('예산 설정됨');}setEditBudget(false);}}>저장</button>
                 <button className="btn btn-sm" onClick={()=>setEditBudget(false)}>취소</button>
               </div>
             ) : (
-              <button className="btn btn-sm" onClick={()=>{setBudgetVal(String(cardBudget));setEditBudget(true);}}>예산 {fmtKRW(cardBudget,{compact:true})} 수정</button>
+              <button className="btn btn-sm" onClick={()=>{setBudgetVal(String(cardBudget));setEditBudget(true);}}>총예산 {fmtKRW(cardBudget,{compact:true})}</button>
             )}
           </div>
         </div>
-        <div style={{marginBottom:14}}>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
-            <span style={{fontSize:12,color:'var(--ink-3)'}}>예산 대비 {budgetPct.toFixed(1)}% 사용</span>
-            <span style={{fontSize:12,fontFamily:'var(--mono)',fontWeight:600,color:budgetPct>80?'var(--negative)':'var(--ink-2)'}}>{fmtKRW(expTotal)} / {fmtKRW(cardBudget)}</span>
-          </div>
-          <div style={{height:8,background:'var(--paper-2)',borderRadius:4,overflow:'hidden'}}>
-            <div style={{height:'100%',background:budgetPct>80?'var(--negative)':budgetPct>60?'var(--warm)':'var(--accent)',width:budgetPct+'%',borderRadius:4,transition:'width .5s'}}></div>
-          </div>
-        </div>
-        {Object.entries(byCard).length>0 ? (
-          <div style={{display:'flex',flexDirection:'column',gap:6}}>
-            {Object.entries(byCard).sort((a,b)=>b[1]-a[1]).map(([card,amt])=>(
-              <div key={card} style={{display:'flex',alignItems:'center',gap:10}}>
-                <div style={{fontSize:12,width:100,flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{card}</div>
-                <div style={{flex:1,height:5,background:'var(--paper-2)',borderRadius:3,overflow:'hidden'}}><div style={{height:'100%',background:'var(--accent)',borderRadius:3,width:expTotal?(amt/expTotal*100)+'%':'0%'}}></div></div>
-                <div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,width:75,textAlign:'right',flexShrink:0}}>{fmtKRW(amt)}</div>
+
+        {/* 카드별 상세 — 자동결제 예약 + 실사용 + 잔여 */}
+        {store.state.cards.map(c => {
+          const autoPays = (store.state.auto_pays||[]).filter(ap=>ap.cardCo===c.co||ap.cardId===c.id);
+          const autoPayTotal = autoPays.reduce((s,ap)=>s+ap.amount, 0);
+          const cardBudgetAmt = (store.state.cardMonthlyBudgets||{})[c.id] || c.limit || 1000000;
+          const spent = monthExp.filter(e=>e.card===c.co).reduce((s,e)=>s+e.amount, 0);
+          const remaining = cardBudgetAmt - autoPayTotal - spent;
+          const autoPct  = Math.min(autoPayTotal / cardBudgetAmt * 100, 100);
+          const spentPct = Math.min(spent / cardBudgetAmt * 100, 100 - autoPct);
+          const isOver   = remaining < 0;
+          const [editBudgetCard, setEditBudgetCard] = uS(false);
+          const [budgetCardVal, setBudgetCardVal]   = uS('');
+          return (
+            <div key={c.id} style={{marginBottom:14, paddingBottom:14, borderBottom:'1px solid var(--line)'}}>
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                <div style={{display:'flex', alignItems:'center', gap:8}}>
+                  <span style={{fontWeight:600, fontSize:13.5}}>{c.co}</span>
+                  <span style={{fontSize:11.5, color:'var(--ink-3)'}}>{c.name}</span>
+                </div>
+                <div style={{display:'flex', alignItems:'center', gap:8}}>
+                  {editBudgetCard ? (
+                    <div style={{display:'flex', gap:5}}>
+                      <input type="number" value={budgetCardVal} onChange={e=>setBudgetCardVal(e.target.value)} placeholder="카드예산"
+                        style={{width:90, padding:'4px 8px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:12, fontFamily:'var(--mono)', background:'var(--bg)'}} />
+                      <button className="btn btn-primary btn-sm" onClick={()=>{const v=parseInt(budgetCardVal);if(!isNaN(v)){store.setCardMonthlyBudget(c.id,v);toast('예산 설정됨');}setEditBudgetCard(false);}}>저장</button>
+                      <button className="btn btn-sm" onClick={()=>setEditBudgetCard(false)}>✕</button>
+                    </div>
+                  ) : (
+                    <button className="btn btn-sm" style={{fontSize:11}} onClick={()=>{setBudgetCardVal(String(cardBudgetAmt));setEditBudgetCard(true);}}>예산 {fmtKRW(cardBudgetAmt,{compact:true})}</button>
+                  )}
+                  <span style={{fontFamily:'var(--mono)', fontSize:12, fontWeight:700, color:isOver?'var(--negative)':'var(--positive)'}}>
+                    {isOver ? '초과 '+fmtKRW(Math.abs(remaining)) : '잔여 '+fmtKRW(remaining)}
+                  </span>
+                </div>
               </div>
-            ))}
-          </div>
-        ) : <div style={{padding:'16px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>이달 소비 내역 없음</div>}
+
+              {/* 3단 막대: [자동결제예약 | 실사용 | 여유] */}
+              <div style={{height:10, background:'var(--paper-2)', borderRadius:5, overflow:'hidden', display:'flex', marginBottom:6}}>
+                {autoPayTotal > 0 && <div style={{height:'100%', background:'#8B5CF6', width:autoPct+'%', flexShrink:0}} title={`자동결제 예약: ${fmtKRW(autoPayTotal)}`}></div>}
+                {spent > 0 && <div style={{height:'100%', background: isOver?'var(--negative)':'var(--accent)', width:spentPct+'%', flexShrink:0}} title={`실사용: ${fmtKRW(spent)}`}></div>}
+              </div>
+
+              {/* 범례 */}
+              <div style={{display:'flex', gap:14, fontSize:11.5, color:'var(--ink-3)', flexWrap:'wrap'}}>
+                {autoPayTotal > 0 && <span style={{display:'flex', alignItems:'center', gap:4}}><span style={{width:8, height:8, borderRadius:2, background:'#8B5CF6', display:'inline-block'}}></span>자동결제 {fmtKRW(autoPayTotal)}</span>}
+                <span style={{display:'flex', alignItems:'center', gap:4}}><span style={{width:8, height:8, borderRadius:2, background:'var(--accent)', display:'inline-block'}}></span>사용 {fmtKRW(spent)}</span>
+                <span style={{display:'flex', alignItems:'center', gap:4, marginLeft:'auto', fontWeight:600, color:isOver?'var(--negative)':'var(--positive)'}}>
+                  {isOver ? '⚠️ 예산 초과' : `잔여 ${fmtKRW(remaining)}`}
+                </span>
+              </div>
+
+              {/* 자동결제 항목 펼치기 */}
+              {autoPays.length > 0 && (
+                <div style={{marginTop:6, padding:'8px 10px', background:'rgba(139,92,246,0.06)', borderRadius:'var(--r-sm)', border:'1px solid rgba(139,92,246,0.15)'}}>
+                  <div style={{fontSize:10.5, fontWeight:700, color:'#8B5CF6', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.07em'}}>자동결제 예약 항목</div>
+                  {autoPays.map(ap => (
+                    <div key={ap.id} style={{display:'flex', justifyContent:'space-between', fontSize:12, padding:'2px 0', color:'var(--ink-2)'}}>
+                      <span>{ap.day}일 {ap.service}</span>
+                      <span style={{fontFamily:'var(--mono)', fontWeight:600, color:'#8B5CF6'}}>−{fmtKRW(ap.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* 카드 한도 */}
@@ -483,25 +548,180 @@ function FlowMapPage() {
 }
 
 // ─────────────────────────────────────────────────────────
-// FIXED COSTS — with next month toggle
+// FIXED COSTS — date-aware: past items = completed (grayed), future = pending
 // ─────────────────────────────────────────────────────────
 function FixedCostsPage({ openFixed }) {
   const store = useStore();
   const toast = useToast();
   const { y, m } = store.state.month;
   const ym = `${y}-${String(m).padStart(2,'0')}`;
-  const [viewMode,setViewMode]=uS('this');
-  const [editItem,setEditItem]=uS(null);
-  const nextDate = new Date(y,m,1);
-  const nextYm = `${nextDate.getFullYear()}-${String(nextDate.getMonth()+1).padStart(2,'0')}`;
-  const targetYm = viewMode==='this'?ym:nextYm;
-  const overrides = (store.state.fixedOverrides||{})[targetYm]||{};
-  const groups = uSe(()=>{
-    const g={}; store.state.fixed.forEach(f=>{if(!g[f.group])g[f.group]=[];g[f.group].push(f);});
-    return Object.entries(g).map(([group,items])=>({group,items}));
-  },[store.state.fixed]);
-  const activeTotal=store.state.fixed.filter(f=>overrides[f.id]!==false).reduce((s,f)=>s+f.amount,0);
-  const total=store.state.fixed.reduce((s,f)=>s+f.amount,0);
+  const [viewMode, setViewMode] = uS('this');
+  const [editItem, setEditItem] = uS(null);
+
+  const nextDate = new Date(y, m, 1);
+  const nextYm   = `${nextDate.getFullYear()}-${String(nextDate.getMonth()+1).padStart(2,'0')}`;
+  const targetYm = viewMode === 'this' ? ym : nextYm;
+  const overrides = (store.state.fixedOverrides || {})[targetYm] || {};
+
+  // 오늘 날짜 — 이번달 볼 때만 완료/예정 구분
+  const now = new Date();
+  const todayDay = now.getDate();
+  const isCurrentMonth = viewMode === 'this' && y === now.getFullYear() && m === now.getMonth()+1;
+
+  // 항목별 상태 계산
+  const getItemStatus = (item) => {
+    if (overrides[item.id] === false) return 'excluded'; // 사용자가 제외
+    if (!isCurrentMonth) return 'active'; // 다음달 or 과거달 = 그냥 active
+    return item.day < todayDay ? 'completed' : 'pending';
+  };
+
+  const groups = uSe(() => {
+    const g = {};
+    store.state.fixed.forEach(f => { if (!g[f.group]) g[f.group] = []; g[f.group].push(f); });
+    return Object.entries(g).map(([group, items]) => ({ group, items: items.sort((a,b)=>a.day-b.day) }));
+  }, [store.state.fixed]);
+
+  const completedItems = store.state.fixed.filter(f => getItemStatus(f) === 'completed');
+  const pendingItems   = store.state.fixed.filter(f => getItemStatus(f) === 'pending');
+  const excludedItems  = store.state.fixed.filter(f => getItemStatus(f) === 'excluded');
+  const completedTotal = completedItems.reduce((s,f) => s+f.amount, 0);
+  const pendingTotal   = pendingItems.reduce((s,f) => s+f.amount, 0);
+  const activeTotal    = completedTotal + pendingTotal;
+  const total          = store.state.fixed.reduce((s,f) => s+f.amount, 0);
+
+  const statusStyle = (status) => ({
+    completed: { opacity:.55, background:'var(--paper-2)', borderRadius:6 },
+    pending:   { opacity:1 },
+    excluded:  { opacity:.35 },
+    active:    { opacity:1 },
+  }[status] || {});
+
+  const statusBadge = (status) => ({
+    completed: <span style={{fontSize:10,background:'var(--ink-3)',color:'#fff',borderRadius:4,padding:'1px 6px',marginLeft:6,fontWeight:600}}>완료</span>,
+    pending:   <span style={{fontSize:10,background:'var(--accent)',color:'#fff',borderRadius:4,padding:'1px 6px',marginLeft:6,fontWeight:600}}>예정</span>,
+    excluded:  <span style={{fontSize:10,background:'var(--paper-3,#ccc)',color:'var(--ink-3)',borderRadius:4,padding:'1px 6px',marginLeft:6,fontWeight:600}}>제외</span>,
+    active:    null,
+  }[status]);
+
+  return (
+    <div className="tab-content">
+      <PageHeader eyebrow="Recurring" title="Fixed costs, " titleEm="the spine."
+        right={<button className="btn btn-primary" onClick={openFixed}>+ 항목 추가</button>} />
+
+      {/* 요약 타일 — 완료/예정 구분 */}
+      {isCurrentMonth ? (
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))', gap:12, marginBottom:16}}>
+          <div style={{padding:'14px 16px', background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-md)', borderTop:'3px solid var(--ink-3)'}}>
+            <div style={{fontSize:10.5, fontWeight:700, color:'var(--ink-3)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6}}>✅ 완료 ({completedItems.length}건)</div>
+            <div style={{fontFamily:'var(--mono)', fontSize:20, fontWeight:700, color:'var(--ink-2)'}}>{fmtKRW(completedTotal)}</div>
+            <div style={{fontSize:11, color:'var(--ink-4)', marginTop:4}}>이미 빠져나간 금액</div>
+          </div>
+          <div style={{padding:'14px 16px', background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-md)', borderTop:'3px solid var(--negative)'}}>
+            <div style={{fontSize:10.5, fontWeight:700, color:'var(--negative)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6}}>⏳ 예정 ({pendingItems.length}건)</div>
+            <div style={{fontFamily:'var(--mono)', fontSize:20, fontWeight:700, color:'var(--negative)'}}>{fmtKRW(pendingTotal)}</div>
+            <div style={{fontSize:11, color:'var(--ink-4)', marginTop:4}}>앞으로 나갈 금액</div>
+          </div>
+          <div style={{padding:'14px 16px', background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-md)', borderTop:'3px solid var(--warm)'}}>
+            <div style={{fontSize:10.5, fontWeight:700, color:'var(--warm)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6}}>📊 이달 합계</div>
+            <div style={{fontFamily:'var(--mono)', fontSize:20, fontWeight:700, color:'var(--warm)'}}>{fmtKRW(activeTotal)}</div>
+            <div style={{fontSize:11, color:'var(--ink-4)', marginTop:4}}>소득의 {Math.round(activeTotal/store.state.income*100)}%</div>
+          </div>
+          <div style={{padding:'14px 16px', background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-md)'}}>
+            <div style={{fontSize:10.5, fontWeight:700, color:'var(--ink-3)', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:6}}>진행률</div>
+            <div style={{fontFamily:'var(--mono)', fontSize:20, fontWeight:700}}>{activeTotal ? Math.round(completedTotal/activeTotal*100) : 0}%</div>
+            <div style={{marginTop:8, height:5, background:'var(--paper-2)', borderRadius:3, overflow:'hidden'}}>
+              <div style={{height:'100%', background:'var(--ink-3)', borderRadius:3, width: activeTotal?(completedTotal/activeTotal*100)+'%':'0%', transition:'width .5s'}}></div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="grid-3" style={{marginBottom:14}}>
+          <Tile label="전체 고정비" num={fmtKRW(total)} sub={`${store.state.fixed.length}개`} accent="var(--negative)" />
+          <Tile label="적용액" num={fmtKRW(activeTotal)} sub="토글 반영" accent="var(--warm)" />
+          <Tile label="소득 대비" num={`${Math.round(activeTotal/store.state.income*100)}%`} accent="var(--accent)" />
+        </div>
+      )}
+
+      {/* 이달/다음달 탭 */}
+      <div style={{display:'flex', gap:8, marginBottom:14, flexWrap:'wrap', alignItems:'center'}}>
+        <button className={'btn '+(viewMode==='this'?'btn-primary':'')} onClick={()=>setViewMode('this')}>{m}월 이번달</button>
+        <button className={'btn '+(viewMode==='next'?'btn-primary':'')} onClick={()=>setViewMode('next')}>{nextDate.getMonth()+1}월 다음달 미리 설정</button>
+        {isCurrentMonth && <span style={{fontSize:12, color:'var(--ink-3)', marginLeft:4}}>📅 {todayDay}일 기준 · {todayDay}일 이전 항목은 <strong>완료</strong>로 표시</span>}
+      </div>
+      {viewMode==='next' && <div style={{background:'var(--accent-soft)', border:'1px solid var(--accent-line)', borderRadius:'var(--r-md)', padding:'10px 14px', marginBottom:12, fontSize:12.5, color:'var(--ink-2)'}}>💡 다음달 고정비를 미리 조정합니다. 체크 해제 시 다음달 제외.</div>}
+
+      {/* 그룹별 목록 */}
+      {groups.map(g => {
+        const gItems = g.items;
+        const gCompleted = gItems.filter(f=>getItemStatus(f)==='completed').reduce((s,f)=>s+f.amount,0);
+        const gPending   = gItems.filter(f=>getItemStatus(f)==='pending').reduce((s,f)=>s+f.amount,0);
+        const gActive    = gItems.filter(f=>getItemStatus(f)!=='excluded').reduce((s,f)=>s+f.amount,0);
+        return (
+          <div key={g.group} className="card" style={{marginBottom:14, padding:0, overflow:'hidden'}}>
+            <div className="between" style={{padding:'14px 20px', background:'var(--paper-2)', borderBottom:'1px solid var(--line)'}}>
+              <div>
+                <div className="card-title">{g.group}</div>
+                {isCurrentMonth && (
+                  <div style={{fontSize:11.5, color:'var(--ink-3)', marginTop:3}}>
+                    완료 {fmtKRW(gCompleted, {compact:true})} · 예정 {fmtKRW(gPending, {compact:true})}
+                  </div>
+                )}
+              </div>
+              <div className="serif" style={{fontSize:20, fontWeight:500}}>{fmtKRW(gActive)}</div>
+            </div>
+            <div style={{padding:'4px 20px'}}>
+              {gItems.map(item => {
+                const status = getItemStatus(item);
+                const isDone  = status === 'completed';
+                const isExcluded = status === 'excluded';
+                return (
+                  <div key={item.id} style={{...statusStyle(status)}}>
+                    <div className="row" style={{padding:'10px 0'}}>
+                      {/* 체크박스 — 토글로 제외/포함 (완료 항목도 여전히 토글 가능) */}
+                      <label style={{display:'flex', alignItems:'center', gap:6, cursor:'pointer', flexShrink:0}}>
+                        <input type="checkbox"
+                          checked={overrides[item.id] !== false}
+                          onChange={e => store.setFixedOverride(targetYm, item.id, e.target.checked)}
+                          style={{width:14, height:14, accentColor:'var(--accent)', cursor:'pointer'}} />
+                      </label>
+                      <div className={'day-chip '+(isDone?'':'out')} style={{
+                        background: isDone?'var(--ink-3)':'', color: isDone?'#fff':'',
+                        minWidth:28, textAlign:'center'
+                      }}>{item.day}</div>
+                      <div className="row-body" style={{flex:1}}>
+                        <div style={{display:'flex', alignItems:'center', flexWrap:'wrap', gap:4}}>
+                          <span className="row-title" style={{textDecoration:isExcluded?'line-through':'none'}}>{item.name}</span>
+                          {statusBadge(status)}
+                        </div>
+                        <div className="row-meta">{item.meta}</div>
+                      </div>
+                      <div className="row-amt mono" style={{
+                        color: isDone?'var(--ink-3)':isExcluded?'var(--ink-4)':'var(--negative)',
+                        textDecoration: isExcluded?'line-through':'none'
+                      }}>
+                        {isExcluded ? fmtKRW(item.amount) : (isDone ? '−'+fmtKRW(item.amount) : '−'+fmtKRW(item.amount))}
+                      </div>
+                      {/* 수정 버튼 — 완료된 항목도 수정 가능 */}
+                      <button className="icon-btn" style={{width:28,height:28}} title="수정" onClick={()=>setEditItem(editItem?.id===item.id?null:item)}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                      </button>
+                      <button className="icon-btn" style={{width:28,height:28}} title="삭제" onClick={()=>{store.deleteFixed(item.id);toast('삭제됨');}}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                      </button>
+                    </div>
+                    {editItem?.id === item.id && (
+                      <InlineEditFixed item={item} onSave={(p)=>{store.updateFixed(item.id,p);toast('수정됨');setEditItem(null);}} onCancel={()=>setEditItem(null)} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
   return (
     <div className="tab-content">
