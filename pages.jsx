@@ -91,8 +91,17 @@ function DashboardPage({ openExpense, openCard }) {
   const expTotal  = monthExp.reduce((s,e)=>s+e.amount,0);
   const cardBudget= store.state.cardBudget||1500000;
   const budgetPct = Math.min((expTotal/cardBudget)*100,100);
+  // 카드 매칭 헬퍼: "KT DC PLUS 롯데카드" ↔ "롯데카드" 처리
+  const matchCard = (expCard, cardCo) => {
+    if (!expCard || !cardCo) return false;
+    return expCard === cardCo || expCard.includes(cardCo) || cardCo.includes(expCard.replace('카드','').trim());
+  };
   const byCard = {};
-  monthExp.forEach(e=>{ byCard[e.card]=(byCard[e.card]||0)+e.amount; });
+  monthExp.forEach(e=>{
+    const c = store.state.cards.find(c => matchCard(e.card, c.co));
+    const key = c ? c.co : e.card;
+    byCard[key]=(byCard[key]||0)+e.amount;
+  });
 
   const [editMinus,  setEditMinus]  = uS(false);
   const [editFixed,  setEditFixed]  = uS(false);
@@ -120,6 +129,9 @@ function DashboardPage({ openExpense, openCard }) {
         </div>
         <MonthSwitchLive />
       </div>
+
+      {/* 주담대 현황 */}
+      <MortgageBox store={store} toast={toast} />
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:14,marginBottom:20}}>
 
@@ -940,26 +952,128 @@ function CardDetailPanel({c,store,toast,onClose}){
 }
 
 // ─────────────────────────────────────────────────────────
-// ANALYTICS
+// ANALYTICS — 마이너스 청산 시뮬레이션 + AI 분석
 // ─────────────────────────────────────────────────────────
 function AnalyticsPage() {
   const store = useStore();
+  const toast = useToast();
   const monthExp = useMonthExpenses();
-  const catTotals=uSe(()=>monthExp.reduce((a,e)=>{a[e.cat]=(a[e.cat]||0)+e.amount;return a;},{}), [monthExp]);
-  const monthTotals=uSe(()=>{
-    const m={}; store.state.expenses.forEach(e=>{const ym=e.date.slice(0,7);m[ym]=(m[ym]||0)+e.amount;});
+  const [aiResult, setAiResult] = uS('');
+  const [aiLoading, setAiLoading] = uS(false);
+
+  const catTotals = uSe(()=>monthExp.reduce((a,e)=>{a[e.cat]=(a[e.cat]||0)+e.amount;return a;},{}), [monthExp]);
+  const monthTotals = uSe(()=>{
+    const m={};
+    store.state.expenses.forEach(e=>{const ym=e.date.slice(0,7);m[ym]=(m[ym]||0)+e.amount;});
     return Object.entries(m).sort((a,b)=>a[0].localeCompare(b[0])).slice(-6);
   },[store.state.expenses]);
   const catColors={'식사':'var(--accent)','카페':'var(--warm)','마트':'var(--positive)','교통':'var(--negative)'};
-  const catSegs=Object.entries(catTotals).map(([l,v])=>({label:l,value:v,color:catColors[l]||'var(--ink-3)'}));
-  const maxMonth=Math.max(...monthTotals.map(([,v])=>v),1);
+  const catSegs = Object.entries(catTotals).map(([l,v])=>({label:l,value:v,color:catColors[l]||'var(--ink-3)'}));
+  const maxMonth = Math.max(...monthTotals.map(([,v])=>v),1);
+
+  // ── 마이너스 통장 청산 시뮬레이션 ──
+  const woori     = store.state.accounts.find(a=>a.id==='woori');
+  const curMinus  = woori?.balance || 0; // 음수
+  const salary    = store.state.income;
+  const fixedOut  = store.state.fixed.reduce((s,f)=>s+f.amount,0);
+  const autoPayOut= (store.state.auto_pays||[]).reduce((s,ap)=>s+ap.amount,0);
+  const avgExp    = monthTotals.length ? monthTotals.reduce((s,[,v])=>s+v,0)/monthTotals.length : 500000;
+  const monthlyNet = salary - fixedOut - autoPayOut - avgExp; // 매달 마이너스 감소량
+  const simMonths = uSe(()=>{
+    const pts = [];
+    let bal = curMinus;
+    for (let i = 0; i <= 60; i++) {
+      pts.push({ month: i, balance: bal });
+      if (bal >= 0) break;
+      bal = Math.min(bal + monthlyNet, 0);
+    }
+    return pts;
+  }, [curMinus, monthlyNet]);
+  const clearMonth = simMonths.find(p=>p.balance>=0);
+  const simMax = Math.abs(curMinus);
+
+  // ── AI 분석 ──
+  const runAI = async () => {
+    setAiLoading(true);
+    setAiResult('');
+    try {
+      const summary = {
+        minusBalance: curMinus,
+        minusLimit: woori?.limit || 150000000,
+        salary, fixedCosts: fixedOut,
+        autoPayments: autoPayOut,
+        avgMonthlyExpense: Math.round(avgExp),
+        monthlyNet,
+        estimatedClearMonths: clearMonth?.month || '60+',
+        mortgage: store.state.mortgage,
+        topCategories: Object.entries(catTotals).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${k}:${fmtKRW(v)}`).join(', '),
+      };
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          model:'claude-sonnet-4-20250514',
+          max_tokens:1000,
+          messages:[{role:'user', content:`당신은 재정 전문가입니다. 아래 재정 데이터를 분석하고 한국어로 간결하게 (3~4개 포인트) 조언해주세요.\n\n${JSON.stringify(summary, null, 2)}\n\n분석 내용:\n1. 마이너스통장 청산 전략\n2. 소비 패턴의 개선점\n3. 주담대 상환과 마이너스 관리 우선순위\n4. 이달 주의할 점\n\n마크다운 없이 평문으로 작성하세요.`}]
+        })
+      });
+      const data = await res.json();
+      setAiResult(data.content?.[0]?.text || '분석 결과를 가져올 수 없습니다.');
+    } catch(e) {
+      setAiResult('AI 분석 중 오류가 발생했습니다: ' + e.message);
+    }
+    setAiLoading(false);
+  };
+
   return (
     <div className="tab-content">
       <PageHeader eyebrow="Insights" title="Spending " titleEm="patterns." />
+
+      {/* 마이너스 청산 시뮬레이션 */}
+      <div className="card" style={{marginBottom:16}}>
+        <div className="card-head">
+          <div>
+            <div className="card-title">📉 마이너스 통장 <em>청산 시뮬레이션</em></div>
+            <div className="card-sub">
+              현재 {fmtKRW(curMinus)} · 월 순감소 {fmtKRW(monthlyNet,{compact:true})} ·
+              {clearMonth ? ` 약 ${clearMonth.month}개월 후 청산 예상` : ' 60개월 내 청산 어려움'}
+            </div>
+          </div>
+        </div>
+
+        {/* 시뮬레이션 바 차트 */}
+        <div style={{marginTop:8}}>
+          {simMonths.filter((_,i)=>i%3===0||i===simMonths.length-1).map(pt=>(
+            <div key={pt.month} style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
+              <div style={{width:44,fontSize:11,fontFamily:'var(--mono)',color:'var(--ink-3)',flexShrink:0}}>{pt.month}개월</div>
+              <div style={{flex:1,height:16,background:'var(--paper-2)',borderRadius:4,overflow:'hidden',position:'relative'}}>
+                <div style={{
+                  height:'100%',
+                  background: pt.balance >= 0 ? 'var(--positive)' : `hsl(${Math.round(210 - (Math.abs(pt.balance)/simMax)*210)},80%,55%)`,
+                  width: simMax ? (Math.abs(pt.balance)/simMax*100)+'%' : '0%',
+                  borderRadius:4, transition:'width .5s'
+                }}></div>
+                {pt.month === (clearMonth?.month||999) && (
+                  <span style={{position:'absolute',right:4,top:1,fontSize:10,fontWeight:700,color:'var(--positive)'}}>✓ 청산</span>
+                )}
+              </div>
+              <div style={{width:80,fontSize:12,fontFamily:'var(--mono)',fontWeight:600,textAlign:'right',flexShrink:0,color:pt.balance>=0?'var(--positive)':'var(--negative)'}}>
+                {fmtKRW(pt.balance,{compact:true})}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{marginTop:12,padding:'10px 14px',background:'var(--paper-2)',borderRadius:'var(--r-sm)',fontSize:12,color:'var(--ink-3)',lineHeight:1.8}}>
+          💡 계산 기준: 급여 {fmtKRW(salary,{compact:true})} − 고정비 {fmtKRW(fixedOut,{compact:true})} − 자동결제 {fmtKRW(autoPayOut,{compact:true})} − 평균소비 {fmtKRW(Math.round(avgExp),{compact:true})} = 월 {fmtKRW(monthlyNet,{compact:true})} 감소
+        </div>
+      </div>
+
       <div className="grid-3-2" style={{marginBottom:16}}>
+        {/* 카테고리 도넛 */}
         <div className="card">
           <div className="card-head"><div className="card-title">카테고리별 <em>분포</em></div></div>
-          {catSegs.length===0?<div style={{padding:'30px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>이달 소비 없음</div>:(
+          {catSegs.length===0 ? <div style={{padding:'30px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>이달 소비 없음</div> : (
             <div style={{display:'flex',alignItems:'center',gap:18,marginTop:6}}>
               <Donut segments={catSegs} center={<><div className="text-xs muted">합계</div><div className="serif" style={{fontSize:17,fontWeight:500,marginTop:2}}>{fmtKRW(monthExp.reduce((s,e)=>s+e.amount,0),{compact:true})}</div></>} />
               <div style={{flex:1,fontSize:12.5}}>
@@ -974,9 +1088,10 @@ function AnalyticsPage() {
             </div>
           )}
         </div>
+        {/* 월별 추이 */}
         <div className="card">
           <div className="card-head"><div className="card-title">월별 <em>소비 추이</em></div></div>
-          {monthTotals.length<2?<div style={{padding:'30px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>데이터 부족</div>:(
+          {monthTotals.length<2 ? <div style={{padding:'30px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>데이터 부족</div> : (
             <div style={{marginTop:10}}>
               {monthTotals.map(([ym,total])=>(
                 <div key={ym} style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
@@ -989,6 +1104,32 @@ function AnalyticsPage() {
           )}
         </div>
       </div>
+
+      {/* AI 분석 */}
+      <div className="card">
+        <div className="card-head">
+          <div><div className="card-title">🤖 AI <em>재정 분석</em></div><div className="card-sub">Claude가 이달 재정 상태를 분석합니다</div></div>
+          <button className="btn btn-primary btn-sm" onClick={runAI} disabled={aiLoading}>
+            {aiLoading ? '분석 중...' : '분석 실행'}
+          </button>
+        </div>
+        {aiLoading && (
+          <div style={{padding:'20px 0',textAlign:'center',color:'var(--ink-3)',fontSize:13}}>
+            <div style={{marginBottom:8}}>🤔 재정 데이터를 분석하고 있습니다...</div>
+            <div style={{width:'100%',height:3,background:'var(--paper-2)',borderRadius:2,overflow:'hidden'}}>
+              <div style={{height:'100%',background:'var(--accent)',borderRadius:2,width:'60%',animation:'none'}}></div>
+            </div>
+          </div>
+        )}
+        {aiResult && !aiLoading && (
+          <div style={{padding:'16px 0',fontSize:13.5,color:'var(--ink)',lineHeight:1.9,whiteSpace:'pre-wrap'}}>{aiResult}</div>
+        )}
+        {!aiResult && !aiLoading && (
+          <div style={{padding:'20px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>
+            "분석 실행" 버튼을 누르면 현재 재정 상태에 대한 AI 조언을 받을 수 있습니다.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -997,7 +1138,79 @@ function AnalyticsPage() {
 // SHARED HELPERS
 // ─────────────────────────────────────────────────────────
 
-// 고정비 월별 독립 수정 (전체수정 vs 이달만수정 선택 가능)
+// 주담대 현황 박스
+function MortgageBox({ store, toast }) {
+  const [editing, setEditing] = uS(false);
+  const mg = store.state.mortgage || {};
+  const balance  = mg.balance  || 0;
+  const original = mg.original || 300000000;
+  const rate     = mg.rate     || 4.66;
+  const autoAmt  = mg.autoPayment || 1272220;
+  const extraAmt = (mg.extraPayment||500000) + (mg.wifePayment||500000);
+  const totalMonthly = autoAmt + extraAmt;
+  const paidPct  = ((original - balance) / original * 100).toFixed(1);
+  const monthsLeft = balance > 0 ? Math.ceil(balance / totalMonthly) : 0;
+
+  const [b, setB] = uS(balance);
+  const [r, setR] = uS(rate);
+  const [a, setA] = uS(autoAmt);
+  const [ex, setEx] = uS(mg.extraPayment||500000);
+  const [wf, setWf] = uS(mg.wifePayment||500000);
+  const st = {padding:'7px 10px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:13,background:'var(--bg)',fontFamily:'var(--mono)'};
+
+  return (
+    <div style={{
+      background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-lg)',
+      padding:'18px 22px', marginBottom:14, borderTop:'3px solid #10B981', position:'relative'
+    }}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:11,fontWeight:700,color:'#10B981',textTransform:'uppercase',letterSpacing:'0.09em',marginBottom:6}}>
+            🏠 주담대 — {mg.bank||'농협은행'} {rate}%
+          </div>
+          {editing ? (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:8,marginBottom:10}}>
+              <div><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>현재 잔액</div><input type="number" value={b} onChange={e=>setB(+e.target.value)} style={st} /></div>
+              <div><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>금리(%)</div><input type="number" step="0.01" value={r} onChange={e=>setR(+e.target.value)} style={st} /></div>
+              <div><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>고정 원리금</div><input type="number" value={a} onChange={e=>setA(+e.target.value)} style={st} /></div>
+              <div><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>본인 추가상환</div><input type="number" value={ex} onChange={e=>setEx(+e.target.value)} style={st} /></div>
+              <div><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>와이프 추가상환</div><input type="number" value={wf} onChange={e=>setWf(+e.target.value)} style={st} /></div>
+            </div>
+          ) : (
+            <div style={{display:'flex',gap:24,flexWrap:'wrap',marginBottom:8}}>
+              <div><div style={{fontSize:11,color:'var(--ink-4)'}}>잔여 잔액</div><div style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:700,color:'var(--warm)'}}>{fmtKRW(balance)}</div></div>
+              <div><div style={{fontSize:11,color:'var(--ink-4)'}}>월 총상환</div><div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700}}>{fmtKRW(totalMonthly)}</div><div style={{fontSize:11,color:'var(--ink-4)'}}>원리금{fmtKRW(autoAmt,{compact:true})}+추가{fmtKRW(extraAmt,{compact:true})}</div></div>
+              <div><div style={{fontSize:11,color:'var(--ink-4)'}}>예상 완납</div><div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700}}>{monthsLeft}개월 후</div></div>
+            </div>
+          )}
+          {/* 진행바 */}
+          <div style={{marginTop:8}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:11.5,color:'var(--ink-3)'}}>
+              <span>상환 완료 {paidPct}%</span>
+              <span>{fmtKRW(original-balance,{compact:true})} 상환 / {fmtKRW(original,{compact:true})} 원금</span>
+            </div>
+            <div style={{height:8,background:'var(--paper-2)',borderRadius:4,overflow:'hidden'}}>
+              <div style={{height:'100%',background:'#10B981',borderRadius:4,width:paidPct+'%',transition:'width .5s'}}></div>
+            </div>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8,flexDirection:'column',alignItems:'flex-end'}}>
+          {editing ? (
+            <>
+              <button className="btn btn-primary btn-sm" onClick={()=>{
+                store.updateMortgage({balance:b,rate:r,autoPayment:a,extraPayment:ex,wifePayment:wf});
+                toast('주담대 정보 저장됨'); setEditing(false);
+              }}>저장</button>
+              <button className="btn btn-sm" onClick={()=>setEditing(false)}>취소</button>
+            </>
+          ) : (
+            <button className="btn btn-sm" onClick={()=>setEditing(true)}>수정</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 function InlineEditFixedIndep({ item, ym, mfa, onSaveGlobal, onSaveMonth, onResetMonth, onCancel }) {
   const [name,    setName]    = uS(item.name);
   const [meta,    setMeta]    = uS(item.meta||'');
@@ -1039,7 +1252,7 @@ function InlineEditFixedIndep({ item, ym, mfa, onSaveGlobal, onSaveMonth, onRese
   );
 }
 
-// 신용카드 자동결제 관리 섹션 (이달/다음달 탭)
+// 신용카드 자동결제 관리 섹션 (이달/다음달 탭 + 월별 독립 금액)
 function AutoPaySection({ store, toast, y, m }) {
   const now = new Date();
   const ym  = `${y}-${String(m).padStart(2,'0')}`;
@@ -1054,7 +1267,10 @@ function AutoPaySection({ store, toast, y, m }) {
   const isCurMonth = viewMode === 'this' && y === now.getFullYear() && m === now.getMonth()+1;
 
   const allAPs = store.state.auto_pays || [];
-  const totalAP = allAPs.reduce((s,ap)=>s+ap.amount,0);
+  // Monthly amount overrides
+  const mapa = (store.state.monthlyAutoPayAmounts||{})[targetYm] || {};
+  const getApAmt = (ap) => mapa[ap.id] !== undefined ? mapa[ap.id] : ap.amount;
+  const totalAP = allAPs.reduce((s,ap) => s+getApAmt(ap), 0);
   const st = {padding:'7px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:12.5,background:'var(--bg)'};
 
   // 카드사별 그룹
@@ -1074,6 +1290,8 @@ function AutoPaySection({ store, toast, y, m }) {
           <button className="btn btn-sm btn-primary" onClick={()=>setAdding(true)}>+ 추가</button>
         </div>
       </div>
+
+      {viewMode==='next' && <div style={{background:'var(--accent-soft)',border:'1px solid var(--accent-line)',borderRadius:'var(--r-sm)',padding:'8px 12px',marginBottom:10,fontSize:12,color:'var(--ink-2)'}}>💡 {nextDate.getMonth()+1}월 자동결제 금액을 별도로 설정할 수 있습니다. 변경하면 해당 월에만 적용됩니다.</div>}
 
       {adding && (
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:8,padding:'12px 14px',background:'var(--accent-soft)',borderRadius:'var(--r-sm)',marginBottom:12}}>
@@ -1105,7 +1323,7 @@ function AutoPaySection({ store, toast, y, m }) {
       )}
 
       {Object.entries(byCard).map(([co, aps]) => {
-        const coTotal = aps.reduce((s,ap)=>s+ap.amount,0);
+        const coTotal = aps.reduce((s,ap)=>s+getApAmt(ap),0);
         return (
           <div key={co} style={{marginBottom:14,paddingBottom:14,borderBottom:'1px solid var(--line)'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
@@ -1114,13 +1332,16 @@ function AutoPaySection({ store, toast, y, m }) {
             </div>
             {aps.sort((a,b)=>a.day-b.day).map(ap => {
               const isDone = isCurMonth && ap.day < todayDay;
+              const customAmt = mapa[ap.id];
+              const displayAmt = customAmt !== undefined ? customAmt : ap.amount;
               return (
                 <div key={ap.id}>
                   <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',opacity:isDone?.6:1}}>
                     <div className={'day-chip '+(isDone?'':'out')} style={{background:isDone?'var(--ink-3)':'',color:isDone?'#fff':'',width:28,textAlign:'center',fontSize:11}}>{ap.day}</div>
                     <div style={{flex:1,fontSize:13}}>{ap.service}</div>
                     {isDone && <span style={{fontSize:10,background:'var(--ink-3)',color:'#fff',borderRadius:4,padding:'1px 5px',fontWeight:600}}>완료</span>}
-                    <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:'#8B5CF6'}}>−{fmtKRW(ap.amount)}</div>
+                    {customAmt !== undefined && <span style={{fontSize:10,background:'#5B6CB5',color:'#fff',borderRadius:4,padding:'1px 5px',fontWeight:600}}>{targetYm.split('-')[1]}월수정</span>}
+                    <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:'#8B5CF6'}}>−{fmtKRW(displayAmt)}</div>
                     <button className="icon-btn" style={{width:26,height:26}} onClick={()=>setEditApId(editApId===ap.id?null:ap.id)}>
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                     </button>
@@ -1129,28 +1350,7 @@ function AutoPaySection({ store, toast, y, m }) {
                     </button>
                   </div>
                   {editApId === ap.id && (
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 80px 70px auto auto',gap:6,padding:'8px 12px',background:'var(--accent-soft)',borderRadius:'var(--r-sm)',margin:'4px 0',alignItems:'end'}}>
-                      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>서비스</div><input defaultValue={ap.service} id={`ap-svc-${ap.id}`} style={{...st,width:'100%'}}/></div>
-                      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>카드사</div>
-                        <select defaultValue={ap.cardCo} id={`ap-co-${ap.id}`} style={{...st,width:'100%',cursor:'pointer'}}>
-                          {store.state.cards.map(c=><option key={c.id} value={c.co}>{c.co}</option>)}
-                        </select>
-                      </div>
-                      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>금액</div><input type="number" defaultValue={ap.amount} id={`ap-amt-${ap.id}`} style={{...st,width:'100%',fontFamily:'var(--mono)'}}/></div>
-                      <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>결제일</div><input type="number" min="1" max="31" defaultValue={ap.day} id={`ap-day-${ap.id}`} style={{...st,width:'100%'}}/></div>
-                      <button className="btn btn-primary btn-sm" onClick={()=>{
-                        const co2 = document.getElementById(`ap-co-${ap.id}`)?.value||ap.cardCo;
-                        const cardObj = store.state.cards.find(c=>c.co===co2);
-                        store.updateAutoPay(ap.id,{
-                          service: document.getElementById(`ap-svc-${ap.id}`)?.value||ap.service,
-                          cardCo: co2, cardId: cardObj?.id||ap.cardId,
-                          amount: +document.getElementById(`ap-amt-${ap.id}`)?.value||ap.amount,
-                          day:    +document.getElementById(`ap-day-${ap.id}`)?.value||ap.day,
-                        });
-                        toast('수정됨'); setEditApId(null);
-                      }}>저장</button>
-                      <button className="btn btn-sm" onClick={()=>setEditApId(null)}>취소</button>
-                    </div>
+                    <AutoPayEditRow ap={ap} targetYm={targetYm} customAmt={customAmt} store={store} toast={toast} onClose={()=>setEditApId(null)} />
                   )}
                 </div>
               );
@@ -1161,6 +1361,52 @@ function AutoPaySection({ store, toast, y, m }) {
     </div>
   );
 }
+
+// 자동결제 수정 행 — 이달만 vs 전체 선택
+function AutoPayEditRow({ ap, targetYm, customAmt, store, toast, onClose }) {
+  const [mode, setMode] = uS('month');
+  const [svc,  setSvc]  = uS(ap.service);
+  const [co,   setCo]   = uS(ap.cardCo);
+  const [amt,  setAmt]  = uS(customAmt !== undefined ? customAmt : ap.amount);
+  const [day,  setDay]  = uS(ap.day);
+  const st = {padding:'7px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:12.5,background:'var(--bg)'};
+  const mn = targetYm.split('-')[1];
+  return (
+    <div style={{padding:'10px 12px',background:'rgba(139,92,246,0.07)',borderRadius:'var(--r-sm)',margin:'4px 0'}}>
+      <div style={{display:'flex',gap:6,marginBottom:10}}>
+        <button className={'btn btn-sm '+(mode==='month'?'btn-primary':'')} onClick={()=>setMode('month')}>{mn}월만 금액 수정</button>
+        <button className={'btn btn-sm '+(mode==='global'?'btn-primary':'')} onClick={()=>setMode('global')}>항목 자체 수정 (전체)</button>
+        {customAmt!==undefined && <button className="btn btn-sm" onClick={()=>{store.resetMonthlyAutoPayAmount(targetYm,ap.id);toast('이달 초기화됨');onClose();}} style={{marginLeft:'auto'}}>이달 초기화</button>}
+      </div>
+      {mode==='month' ? (
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <span style={{fontSize:12,color:'var(--ink-3)'}}>{mn}월 금액</span>
+          <input type="number" value={amt} onChange={e=>setAmt(+e.target.value)} style={{...st,width:120,fontFamily:'var(--mono)'}} />
+          <button className="btn btn-primary btn-sm" onClick={()=>{store.setMonthlyAutoPayAmount(targetYm,ap.id,amt);toast(`${mn}월 금액 저장됨`);onClose();}}>저장</button>
+          <button className="btn btn-sm" onClick={onClose}>취소</button>
+        </div>
+      ) : (
+        <div style={{display:'grid',gridTemplateColumns:'1fr 80px 1fr 70px auto auto',gap:6,alignItems:'end'}}>
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>서비스</div><input value={svc} onChange={e=>setSvc(e.target.value)} style={{...st,width:'100%'}}/></div>
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>결제일</div><input type="number" min="1" max="31" value={day} onChange={e=>setDay(+e.target.value)} style={{...st,width:'100%'}}/></div>
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>카드사</div>
+            <select value={co} onChange={e=>setCo(e.target.value)} style={{...st,width:'100%',cursor:'pointer'}}>
+              {store.state.cards.map(c=><option key={c.id} value={c.co}>{c.co}</option>)}
+            </select>
+          </div>
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>기본금액</div><input type="number" value={ap.amount} id={`apg-amt-${ap.id}`} defaultValue={ap.amount} style={{...st,width:'100%',fontFamily:'var(--mono)'}}/></div>
+          <button className="btn btn-primary btn-sm" onClick={()=>{
+            const newAmt = +document.getElementById(`apg-amt-${ap.id}`)?.value || ap.amount;
+            const cardObj = store.state.cards.find(c=>c.co===co);
+            store.updateAutoPay(ap.id,{service:svc,cardCo:co,cardId:cardObj?.id||ap.cardId,amount:newAmt,day});
+            toast('전체 수정됨'); onClose();
+          }}>저장</button>
+          <button className="btn btn-sm" onClick={onClose}>취소</button>
+        </div>
+      )}
+    </div>
+  );
+}
 function CardSpendingRow({ c, monthExp, store, toast }) {
   const [editBudgetCard, setEditBudgetCard] = uS(false);
   const [budgetCardVal,  setBudgetCardVal]  = uS('');
@@ -1168,7 +1414,11 @@ function CardSpendingRow({ c, monthExp, store, toast }) {
   const autoPays     = (store.state.auto_pays||[]).filter(ap => ap.cardCo===c.co || ap.cardId===c.id);
   const autoPayTotal = autoPays.reduce((s,ap) => s+ap.amount, 0);
   const cardBudgetAmt= (store.state.cardMonthlyBudgets||{})[c.id] || c.limit || 1000000;
-  const spent        = monthExp.filter(e => e.card===c.co).reduce((s,e) => s+e.amount, 0);
+  const matchCard = (expCard, cardCo) => {
+    if (!expCard || !cardCo) return false;
+    return expCard === cardCo || expCard.includes(cardCo) || cardCo.includes(expCard.replace('카드','').trim());
+  };
+  const spent = monthExp.filter(e => matchCard(e.card, c.co)).reduce((s,e) => s+e.amount, 0);
   const remaining    = cardBudgetAmt - autoPayTotal - spent;
   const autoPct      = Math.min(autoPayTotal / cardBudgetAmt * 100, 100);
   const spentPct     = Math.min(spent / cardBudgetAmt * 100, 100 - autoPct);
@@ -1322,5 +1572,5 @@ Object.assign(window, {
   DashboardPage, AccountsPage, FlowMapPage, FixedCostsPage,
   TimelinePage, ExpensesPage, CreditCardsPage, AnalyticsPage,
   CAT_DEFS, getCatDef, useMonthExpenses, MonthSwitchLive,
-  InlineEditFixed, ExpenseRow
+  InlineEditFixed, ExpenseRow, MortgageBox, AutoPayEditRow
 });
