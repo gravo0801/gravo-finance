@@ -31,6 +31,20 @@ function AppShell() {
   const [searchOpen, setSearchOpen] = useS(false);
   const [notifOpen, setNotifOpen] = useS(false);
   const [settingsOpen, setSettingsOpen] = useS(false);
+  const [syncStatus, setSyncStatus] = useS('idle'); // idle | connecting | ok | error
+  const store = useStore();
+
+  // ── 앱 시작 시 Firebase 자동 재연결 ──────────────────────
+  useE(() => {
+    const apiKey  = localStorage.getItem('gf_fb_apikey')  || '';
+    const projId  = localStorage.getItem('gf_fb_projid')  || '';
+    const code    = localStorage.getItem('gf_fb_synccode') || '';
+    if (!apiKey || !projId || !code) return; // 한번도 설정 안 한 경우
+    setSyncStatus('connecting');
+    store.fbConnect(apiKey, projId, code)
+      .then(() => setSyncStatus('ok'))
+      .catch(() => setSyncStatus('error'));
+  }, []); // 마운트 1회만 실행
 
   // Lock body scroll when drawer open
   useE(() => {
@@ -88,6 +102,7 @@ function AppShell() {
             openNotif={() => setNotifOpen(true)}
             openSettings={() => setSettingsOpen(true)}
             theme={tweaks.theme}
+            syncStatus={syncStatus}
             onToggleTheme={() => setTweak("theme", tweaks.theme === "dark" ? "light" : "dark")} />
           <div className="content">
             <Page

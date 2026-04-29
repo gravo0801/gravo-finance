@@ -55,10 +55,18 @@ function Sidebar({ active, setActive, drawerOpen, setDrawerOpen }) {
   );
 }
 
-function Topbar({ active, setDrawerOpen, openSearch, openNotif, openSettings, theme, onToggleTheme }) {
+function Topbar({ active, setDrawerOpen, openSearch, openNotif, openSettings, theme, onToggleTheme, syncStatus }) {
   const isDark = theme === 'dark';
   const current = NAV.flatMap(g => g.items).find(i => i.id === active) || NAV[0].items[0];
   const groupOf = NAV.find(g => g.items.some(i => i.id === active))?.group || 'Overview';
+
+  const syncBadge = {
+    idle:       null,
+    connecting: { color:'#F59E0B', label:'연결 중…', dot:'#F59E0B' },
+    ok:         { color:'#10B981', label:'동기화됨',  dot:'#10B981' },
+    error:      { color:'#EF4444', label:'연결 실패', dot:'#EF4444' },
+  }[syncStatus];
+
   return (
     <header className="topbar">
       <button className="icon-btn topbar-menu" onClick={() => setDrawerOpen && setDrawerOpen(true)} aria-label="메뉴">
@@ -70,6 +78,16 @@ function Topbar({ active, setDrawerOpen, openSearch, openNotif, openSettings, th
         <span className="crumbs-current">{current.label}</span>
       </div>
       <div className="topbar-right">
+        {/* 동기화 상태 배지 */}
+        {syncBadge && (
+          <div style={{display:'flex', alignItems:'center', gap:5, padding:'3px 9px', borderRadius:20, background:`${syncBadge.dot}18`, border:`1px solid ${syncBadge.dot}44`}}>
+            <span style={{width:6, height:6, borderRadius:'50%', background:syncBadge.dot, display:'inline-block',
+              boxShadow: syncStatus==='ok' ? `0 0 6px ${syncBadge.dot}` : 'none',
+              animation: syncStatus==='connecting' ? 'pulse 1.2s infinite' : 'none'
+            }}></span>
+            <span style={{fontSize:11, fontWeight:600, color:syncBadge.color, whiteSpace:'nowrap'}}>{syncBadge.label}</span>
+          </div>
+        )}
         <div className="date-pill">{new Date().toLocaleDateString("ko-KR",{year:"2-digit",month:"2-digit",day:"2-digit"}).replace(/\. /g,".").replace(".","")}.</div>
         <button className="icon-btn" title="검색 (⌘K)" onClick={openSearch}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
