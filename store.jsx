@@ -42,6 +42,19 @@ const SEED = {
   // 카드 소비 예산
   cardBudget: 1500000,
   salaryDay: 25,          // 매달 급여 입금 일자
+  // 주담대 정보
+  mortgage: {
+    bank: '농협은행',
+    original: 300000000,    // 총 대출액 3억
+    balance: 182480000,     // 현재 잔액
+    rate: 4.66,             // 금리 %
+    autoPayment: 1272220,   // 매달 고정 원리금
+    extraPayment: 500000,   // 매달 추가 원금 (본인)
+    wifePayment: 500000,    // 매달 추가 원금 (와이프)
+    startDate: '2020-01',   // 대출 시작월
+  },
+  // 자동결제 월별 금액 오버라이드: {YYYY-MM: {apId: amount}}
+  monthlyAutoPayAmounts: {},
   // 월별 고정비 금액 오버라이드: {YYYY-MM: {fixedId: customAmount}}
   monthlyFixedAmounts: {},
   // 자동결제 (카드별 자동이체 항목)
@@ -295,6 +308,19 @@ function StoreProvider({ children }) {
     updateAutoPay: (id, patch) => setState(s => ({ ...s, auto_pays: (s.auto_pays||[]).map(a=>a.id===id?{...a,...patch}:a) })),
     setCardMonthlyBudget: (cardId, amount) => setState(s => ({ ...s, cardMonthlyBudgets: {...(s.cardMonthlyBudgets||{}), [cardId]: amount} })),
     setSalaryDay: (d) => setState(s => ({ ...s, salaryDay: d })),
+    updateMortgage: (patch) => setState(s => ({ ...s, mortgage: {...(s.mortgage||{}), ...patch} })),
+    setMonthlyAutoPayAmount: (ym, apId, amount) => setState(s => {
+      const mapa = {...(s.monthlyAutoPayAmounts||{})};
+      if (!mapa[ym]) mapa[ym] = {};
+      if (amount === null) delete mapa[ym][apId];
+      else mapa[ym][apId] = amount;
+      return { ...s, monthlyAutoPayAmounts: mapa };
+    }),
+    resetMonthlyAutoPayAmount: (ym, apId) => setState(s => {
+      const mapa = {...(s.monthlyAutoPayAmounts||{})};
+      if (mapa[ym]) { delete mapa[ym][apId]; }
+      return { ...s, monthlyAutoPayAmounts: mapa };
+    }),
     setMonthlyFixedAmount: (ym, id, amount) => setState(s => {
       const mfa = {...(s.monthlyFixedAmounts||{})};
       if (!mfa[ym]) mfa[ym] = {};
