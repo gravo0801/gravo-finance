@@ -41,6 +41,9 @@ const SEED = {
   fixedOverrides: {},
   // 카드 소비 예산
   cardBudget: 1500000,
+  salaryDay: 25,          // 매달 급여 입금 일자
+  // 월별 고정비 금액 오버라이드: {YYYY-MM: {fixedId: customAmount}}
+  monthlyFixedAmounts: {},
   // 자동결제 (카드별 자동이체 항목)
   auto_pays: [
     {id:'ap1', cardId:'c1', cardCo:'롯데카드', service:'암보험2',         amount:116500, day:25},
@@ -291,6 +294,13 @@ function StoreProvider({ children }) {
     deleteAutoPay: (id)        => setState(s => ({ ...s, auto_pays: (s.auto_pays||[]).filter(a=>a.id!==id) })),
     updateAutoPay: (id, patch) => setState(s => ({ ...s, auto_pays: (s.auto_pays||[]).map(a=>a.id===id?{...a,...patch}:a) })),
     setCardMonthlyBudget: (cardId, amount) => setState(s => ({ ...s, cardMonthlyBudgets: {...(s.cardMonthlyBudgets||{}), [cardId]: amount} })),
+    setSalaryDay: (d) => setState(s => ({ ...s, salaryDay: d })),
+    setMonthlyFixedAmount: (ym, id, amount) => setState(s => {
+      const mfa = {...(s.monthlyFixedAmounts||{})};
+      if (!mfa[ym]) mfa[ym] = {};
+      if (amount === null) delete mfa[ym][id]; else mfa[ym][id] = amount;
+      return { ...s, monthlyFixedAmounts: mfa };
+    }),
     exportData: () => state,
     importData: (data) => {
       if (!data || typeof data !== 'object') throw new Error('Invalid data');
