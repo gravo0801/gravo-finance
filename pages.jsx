@@ -62,6 +62,8 @@ function DashboardPage({ openExpense, openCard }) {
   const woori    = store.state.accounts.find(a=>a.id==='woori')||store.state.accounts[0];
   const curMinus = woori?.balance||0;
   const overrides = (store.state.fixedOverrides||{})[ym]||{};
+  const mfaDash   = (store.state.monthlyFixedAmounts||{})[ym]||{}; // 이달 금액 오버라이드
+  const getFixedAmt = (f) => mfaDash[f.id]!==undefined ? mfaDash[f.id] : f.amount;
 
   // 날짜 기반: 완료(지난 것) vs 예정(앞으로)
   const now2 = new Date();
@@ -74,9 +76,9 @@ function DashboardPage({ openExpense, openCard }) {
   const completedFixed = isCurMonth
     ? activeFixed.filter(f => f.day < todayDay2)
     : [];
-  const fixedTotal   = activeFixed.reduce((s,f)=>s+f.amount,0);
-  const pendingFixedTotal = pendingFixed.reduce((s,f)=>s+f.amount,0);
-  const completedFixedTotal = completedFixed.reduce((s,f)=>s+f.amount,0);
+  const fixedTotal   = activeFixed.reduce((s,f)=>s+getFixedAmt(f),0);
+  const pendingFixedTotal = pendingFixed.reduce((s,f)=>s+getFixedAmt(f),0);
+  const completedFixedTotal = completedFixed.reduce((s,f)=>s+getFixedAmt(f),0);
   const cardBill    = ((store.state.monthlyCardBills||{})[ym])||{};
   const cardBillTotal = cardBill.total||0;
   const salary    = ((store.state.monthlySalaries||{})[ym])||store.state.income;
@@ -135,7 +137,7 @@ function DashboardPage({ openExpense, openCard }) {
       {/* 주담대 현황 */}
       <MortgageBox store={store} toast={toast} />
 
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(210px,1fr))',gap:14,marginBottom:20}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14,marginBottom:20}}>
 
         {/* 1. 마이너스 잔액 */}
         <div style={box('var(--negative)')}>
@@ -160,7 +162,6 @@ function DashboardPage({ openExpense, openCard }) {
 
         {/* 2. 고정비 */}
         <div style={box('var(--warm)')}>
-          {editBtnEl(()=>setEditFixed(true))}
           <div style={lbl}>이번달 고정비</div>
           <div style={{...num,color:'var(--warm)'}}>{fmtKRW(fixedTotal)}</div>
           <div style={{fontSize:11.5,color:'var(--ink-4)',marginTop:6,lineHeight:1.7}}>
@@ -168,21 +169,7 @@ function DashboardPage({ openExpense, openCard }) {
               <>완료 {fmtKRW(completedFixedTotal,{compact:true})} · 예정 {fmtKRW(pendingFixedTotal,{compact:true})}</>
             ) : `${activeFixed.length}개 항목`}
           </div>
-          {editFixed && (
-            <div style={{position:'fixed',inset:0,background:'rgba(26,23,20,0.55)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={()=>setEditFixed(false)}>
-              <div onClick={e=>e.stopPropagation()} style={{background:'var(--paper)',borderRadius:'var(--r-lg)',padding:24,width:'100%',maxWidth:400,maxHeight:'80vh',overflow:'auto',boxShadow:'var(--shadow-lg)'}}>
-                <div className="serif" style={{fontSize:18,marginBottom:12}}>이달 고정비 선택</div>
-                {store.state.fixed.map(f=>(
-                  <label key={f.id} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderBottom:'1px solid var(--line)',cursor:'pointer'}}>
-                    <input type="checkbox" checked={overrides[f.id]!==false} onChange={e=>store.setFixedOverride(ym,f.id,e.target.checked)} style={{width:15,height:15,accentColor:'var(--accent)'}} />
-                    <div style={{flex:1}}><div style={{fontSize:13,fontWeight:500}}>{f.name}</div><div style={{fontSize:11,color:'var(--ink-4)'}}>{f.day}일 · {f.group}</div></div>
-                    <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:overrides[f.id]===false?'var(--ink-4)':'var(--negative)'}}>{fmtKRW(f.amount)}</div>
-                  </label>
-                ))}
-                <button className="btn btn-primary" style={{width:'100%',marginTop:16,justifyContent:'center'}} onClick={()=>setEditFixed(false)}>확인</button>
-              </div>
-            </div>
-          )}
+          <div style={{fontSize:10.5,color:'var(--ink-4)',marginTop:4}}>고정비 관리 탭에서 수정</div>
         </div>
 
         {/* 3. 카드 청구액 */}
@@ -1527,10 +1514,13 @@ function AutoPaySection({ store, toast, y, m }) {
 
       {adding && (
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:8,padding:'12px 14px',background:'var(--accent-soft)',borderRadius:'var(--r-sm)',marginBottom:12}}>
-          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>카드사</div>
-            <select value={newAp.cardCo} onChange={e=>setNewAp(p=>({...p,cardCo:e.target.value}))} style={{...st,width:'100%',cursor:'pointer'}}>
-              <option value="">선택</option>
-              {store.state.cards.map(c=><option key={c.id} value={c.co}>{c.co}</option>)}
+          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>카드 선택</div>
+            <select value={newAp.cardCo} onChange={e=>{
+              const [co, name] = e.target.value.split('||');
+              setNewAp(p=>({...p,cardCo:co,cardName:name||''}));
+            }} style={{...st,width:'100%',cursor:'pointer'}}>
+              <option value="">카드 선택</option>
+              {store.state.cards.map(c=><option key={c.id} value={`${c.co}||${c.name}`}>{c.co} — {c.name}</option>)}
             </select>
           </div>
           <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>서비스명</div><input value={newAp.service} onChange={e=>setNewAp(p=>({...p,service:e.target.value}))} placeholder="넷플릭스" style={{...st,width:'100%'}}/></div>
@@ -1591,44 +1581,73 @@ function AutoPaySection({ store, toast, y, m }) {
 }
 
 // 자동결제 수정 행 — 이달만 vs 전체 선택
-function AutoPayEditRow({ ap, targetYm, customAmt, store, toast, onClose }) {
+function AutoPayEditRow({ ap, targetYm, customAmt, store, toast, onClose, onMonthSave, onGlobalSave }) {
   const [mode, setMode] = uS('month');
   const [svc,  setSvc]  = uS(ap.service);
   const [co,   setCo]   = uS(ap.cardCo);
-  const [amt,  setAmt]  = uS(customAmt !== undefined ? customAmt : ap.amount);
+  const [amt,  setAmt]  = uS(ap.amount);  // 이달 금액 (수정 가능)
+  const [gAmt, setGAmt] = uS(ap.amount);  // 전체 금액
   const [day,  setDay]  = uS(ap.day);
   const st = {padding:'7px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:12.5,background:'var(--bg)'};
   const mn = targetYm.split('-')[1];
+
+  const handleMonthSave = () => {
+    if (onMonthSave) {
+      onMonthSave(+amt);
+    } else {
+      store.updateMonthAutoPay(targetYm, ap.id, {amount:+amt});
+      toast(`${mn}월 금액 저장됨`);
+    }
+    onClose();
+  };
+
+  const handleGlobalSave = () => {
+    const cardObj = store.state.cards.find(c=>c.co===co);
+    const patch = {service:svc, cardCo:co, cardId:cardObj?.id||ap.cardId, amount:+gAmt, day:+day};
+    if (onGlobalSave) {
+      onGlobalSave(patch);
+    } else {
+      store.updateMonthAutoPay(targetYm, ap.id, patch);
+      toast('수정됨');
+    }
+    onClose();
+  };
+
   return (
     <div style={{padding:'10px 12px',background:'rgba(139,92,246,0.07)',borderRadius:'var(--r-sm)',margin:'4px 0'}}>
-      <div style={{display:'flex',gap:6,marginBottom:10}}>
-        <button className={'btn btn-sm '+(mode==='month'?'btn-primary':'')} onClick={()=>setMode('month')}>{mn}월만 금액 수정</button>
-        <button className={'btn btn-sm '+(mode==='global'?'btn-primary':'')} onClick={()=>setMode('global')}>항목 자체 수정 (전체)</button>
-        {customAmt!==undefined && <button className="btn btn-sm" onClick={()=>{store.resetMonthlyAutoPayAmount(targetYm,ap.id);toast('이달 초기화됨');onClose();}} style={{marginLeft:'auto'}}>이달 초기화</button>}
+      <div style={{display:'flex',gap:6,marginBottom:10,flexWrap:'wrap'}}>
+        <button className={'btn btn-sm '+(mode==='month'?'btn-primary':'')} onClick={()=>setMode('month')}>{mn}월 금액만 수정</button>
+        <button className={'btn btn-sm '+(mode==='global'?'btn-primary':'')} onClick={()=>setMode('global')}>항목 전체 수정</button>
       </div>
       {mode==='month' ? (
-        <div style={{display:'flex',gap:8,alignItems:'center'}}>
-          <span style={{fontSize:12,color:'var(--ink-3)'}}>{mn}월 금액</span>
-          <input type="number" value={amt} onChange={e=>setAmt(+e.target.value)} style={{...st,width:120,fontFamily:'var(--mono)'}} />
-          <button className="btn btn-primary btn-sm" onClick={()=>{store.setMonthlyAutoPayAmount(targetYm,ap.id,amt);toast(`${mn}월 금액 저장됨`);onClose();}}>저장</button>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          <span style={{fontSize:12,color:'var(--ink-3)'}}>{mn}월 금액 (원)</span>
+          <input type="number" value={amt} onChange={e=>setAmt(e.target.value)}
+            style={{...st,width:130,fontFamily:'var(--mono)'}} />
+          <button className="btn btn-primary btn-sm" onClick={handleMonthSave}>저장</button>
           <button className="btn btn-sm" onClick={onClose}>취소</button>
         </div>
       ) : (
-        <div style={{display:'grid',gridTemplateColumns:'1fr 80px 1fr 70px auto auto',gap:6,alignItems:'end'}}>
-          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>서비스</div><input value={svc} onChange={e=>setSvc(e.target.value)} style={{...st,width:'100%'}}/></div>
-          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>결제일</div><input type="number" min="1" max="31" value={day} onChange={e=>setDay(+e.target.value)} style={{...st,width:'100%'}}/></div>
-          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>카드사</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 100px 1fr 90px auto auto',gap:6,alignItems:'end'}}>
+          <div>
+            <div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>서비스명</div>
+            <input value={svc} onChange={e=>setSvc(e.target.value)} style={{...st,width:'100%'}}/>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>결제일</div>
+            <input type="number" min="1" max="31" value={day} onChange={e=>setDay(+e.target.value)} style={{...st,width:'100%'}}/>
+          </div>
+          <div>
+            <div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>카드</div>
             <select value={co} onChange={e=>setCo(e.target.value)} style={{...st,width:'100%',cursor:'pointer'}}>
-              {store.state.cards.map(c=><option key={c.id} value={c.co}>{c.co}</option>)}
+              {store.state.cards.map(c=><option key={c.id} value={c.co}>{c.co} {c.name}</option>)}
             </select>
           </div>
-          <div><div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>기본금액</div><input type="number" value={ap.amount} id={`apg-amt-${ap.id}`} defaultValue={ap.amount} style={{...st,width:'100%',fontFamily:'var(--mono)'}}/></div>
-          <button className="btn btn-primary btn-sm" onClick={()=>{
-            const newAmt = +document.getElementById(`apg-amt-${ap.id}`)?.value || ap.amount;
-            const cardObj = store.state.cards.find(c=>c.co===co);
-            store.updateAutoPay(ap.id,{service:svc,cardCo:co,cardId:cardObj?.id||ap.cardId,amount:newAmt,day});
-            toast('전체 수정됨'); onClose();
-          }}>저장</button>
+          <div>
+            <div style={{fontSize:10,color:'var(--ink-4)',marginBottom:2}}>금액</div>
+            <input type="number" value={gAmt} onChange={e=>setGAmt(e.target.value)} style={{...st,width:'100%',fontFamily:'var(--mono)'}}/>
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={handleGlobalSave}>저장</button>
           <button className="btn btn-sm" onClick={onClose}>취소</button>
         </div>
       )}
