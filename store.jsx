@@ -57,7 +57,9 @@ const SEED = {
   monthlyAutoPayAmounts: {},
   // 월별 고정비 금액 오버라이드: {YYYY-MM: {fixedId: customAmount}}
   monthlyFixedAmounts: {},
-  // 자동결제 (카드별 자동이체 항목)
+  // 월별 독립 자동결제 목록: {YYYY-MM: [...items]} — 없으면 auto_pays를 초기 복사본으로 사용
+  monthlyAutoPays: {},
+  // 자동결제 (카드별 자동이체 항목) — 신규 월의 초기 템플릿
   auto_pays: [
     {id:'ap1', cardId:'c1', cardCo:'롯데카드', service:'암보험2',         amount:116500, day:25},
     {id:'ap2', cardId:'c1', cardCo:'롯데카드', service:'하나치매보험',     amount:55000,  day:15},
@@ -306,6 +308,23 @@ function StoreProvider({ children }) {
     addAutoPay:    (ap)        => setState(s => ({ ...s, auto_pays: [...(s.auto_pays||[]), {...ap, id:'ap'+Date.now()}] })),
     deleteAutoPay: (id)        => setState(s => ({ ...s, auto_pays: (s.auto_pays||[]).filter(a=>a.id!==id) })),
     updateAutoPay: (id, patch) => setState(s => ({ ...s, auto_pays: (s.auto_pays||[]).map(a=>a.id===id?{...a,...patch}:a) })),
+    // 월별 독립 자동결제
+    initMonthAutoPays: (ym, template) => setState(s => {
+      if ((s.monthlyAutoPays||{})[ym] !== undefined) return s;
+      return { ...s, monthlyAutoPays: {...(s.monthlyAutoPays||{}), [ym]: template.map(ap=>({...ap, id:ap.id+'_m'+ym.replace('-','')}))} };
+    }),
+    addMonthAutoPay: (ym, ap) => setState(s => {
+      const cur = (s.monthlyAutoPays||{})[ym] || [];
+      return { ...s, monthlyAutoPays: {...(s.monthlyAutoPays||{}), [ym]: [...cur, {...ap, id:'ap'+Date.now()+'_'+ym}]} };
+    }),
+    deleteMonthAutoPay: (ym, id) => setState(s => {
+      const cur = (s.monthlyAutoPays||{})[ym] || [];
+      return { ...s, monthlyAutoPays: {...(s.monthlyAutoPays||{}), [ym]: cur.filter(a=>a.id!==id)} };
+    }),
+    updateMonthAutoPay: (ym, id, patch) => setState(s => {
+      const cur = (s.monthlyAutoPays||{})[ym] || [];
+      return { ...s, monthlyAutoPays: {...(s.monthlyAutoPays||{}), [ym]: cur.map(a=>a.id===id?{...a,...patch}:a)} };
+    }),
     setCardMonthlyBudget: (cardId, amount) => setState(s => ({ ...s, cardMonthlyBudgets: {...(s.cardMonthlyBudgets||{}), [cardId]: amount} })),
     setSalaryDay: (d) => setState(s => ({ ...s, salaryDay: d })),
     updateMortgage: (patch) => setState(s => ({ ...s, mortgage: {...(s.mortgage||{}), ...patch} })),
