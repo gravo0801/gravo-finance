@@ -41,6 +41,23 @@ const SEED = {
   fixedOverrides: {},
   // 카드 소비 예산
   cardBudget: 1500000,
+  // 자동결제 (카드별 자동이체 항목)
+  auto_pays: [
+    {id:'ap1', cardId:'c1', cardCo:'롯데카드', service:'암보험2',         amount:116500, day:25},
+    {id:'ap2', cardId:'c1', cardCo:'롯데카드', service:'하나치매보험',     amount:55000,  day:15},
+    {id:'ap3', cardId:'c1', cardCo:'롯데카드', service:'KT핸드폰결제',     amount:74500,  day:11},
+    {id:'ap4', cardId:'c7', cardCo:'농협카드', service:'KT인터넷',         amount:40700,  day:11},
+    {id:'ap5', cardId:'c3', cardCo:'신한카드', service:'네이버멤버십/넷플', amount:11500,  day:4},
+    {id:'ap6', cardId:'c3', cardCo:'신한카드', service:'애플클라우드',      amount:3300,   day:15},
+    {id:'ap7', cardId:'c3', cardCo:'신한카드', service:'구글Gemini',        amount:29000,  day:6},
+    {id:'ap8', cardId:'c3', cardCo:'신한카드', service:'네이버플러스',      amount:4900,   day:4},
+    {id:'ap9', cardId:'c3', cardCo:'신한카드', service:'Grok AI',           amount:48000,  day:10},
+    {id:'ap10',cardId:'c3', cardCo:'신한카드', service:'유튜브프리미엄',    amount:14900,  day:6},
+    {id:'ap11',cardId:'c3', cardCo:'신한카드', service:'클로드AI',          amount:30000,  day:14},
+    {id:'ap12',cardId:'c3', cardCo:'신한카드', service:'멘토즈스터디카페',  amount:65000,  day:25},
+  ],
+  // 카드별 월 소비 예산 {cardId: amount}
+  cardMonthlyBudgets: {},
   // 통장별 자금흐름 (per-bank flows)
   bankFlows: {
     woori:    [
@@ -270,7 +287,10 @@ function StoreProvider({ children }) {
       const flows = (s.bankFlows||{})[bankId] || [];
       return { ...s, bankFlows: { ...(s.bankFlows||{}), [bankId]: [...flows, {...flow, id:'bf'+Date.now()}] } };
     }),
-    reset: () => { localStorage.removeItem(STORE_KEY); setStateRaw(SEED); },
+    addAutoPay:    (ap)        => setState(s => ({ ...s, auto_pays: [...(s.auto_pays||[]), {...ap, id:'ap'+Date.now()}] })),
+    deleteAutoPay: (id)        => setState(s => ({ ...s, auto_pays: (s.auto_pays||[]).filter(a=>a.id!==id) })),
+    updateAutoPay: (id, patch) => setState(s => ({ ...s, auto_pays: (s.auto_pays||[]).map(a=>a.id===id?{...a,...patch}:a) })),
+    setCardMonthlyBudget: (cardId, amount) => setState(s => ({ ...s, cardMonthlyBudgets: {...(s.cardMonthlyBudgets||{}), [cardId]: amount} })),
     exportData: () => state,
     importData: (data) => {
       if (!data || typeof data !== 'object') throw new Error('Invalid data');
