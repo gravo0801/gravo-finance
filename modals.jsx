@@ -1,3 +1,80 @@
+
+function SyncSection() {
+  const [status, setStatus] = mS('off');
+  const [apiKey, setApiKey] = mS(localStorage.getItem('gf_fb_apikey') || '');
+  const [projId, setProjId] = mS(localStorage.getItem('gf_fb_projid') || '');
+  const [code,   setCode]   = mS(localStorage.getItem('gf_fb_synccode') || '');
+  const [error,  setError]  = mS('');
+  const [busy,   setBusy]   = mS(false);
+  const toast = useToast();
+
+  mS(() => {
+    const unsub = useStore().fbOnStatus(setStatus);
+    return unsub;
+  });
+  React.useEffect(() => {
+    const unsub = useStore().fbOnStatus(setStatus);
+    return unsub;
+  }, []);
+
+  const connect = async () => {
+    if (!apiKey || !projId || !code) { setError('모든 항목을 입력하세요'); return; }
+    setBusy(true); setError('');
+    try {
+      await useStore().fbConnect(apiKey, projId, code);
+      toast('✅ 동기화 연결됨');
+    } catch(e) {
+      setError(e.message);
+    } finally { setBusy(false); }
+  };
+
+  const disconnect = () => {
+    useStore().fbDisconnect();
+    toast('동기화 해제됨');
+  };
+
+  const dotColor = { off:'var(--ink-5)', connecting:'var(--warm)', ok:'var(--positive)', error:'var(--negative)' }[status] || 'var(--ink-5)';
+  const dotLabel = { off:'연결 안 됨', connecting:'연결 중...', ok:'동기화 중', error:'오류' }[status] || '';
+
+  if (status === 'ok') {
+    return (
+      <div style={{padding:'12px 14px', background:'var(--positive-soft)', border:'1px solid var(--positive)', borderRadius:'var(--r-sm)', marginBottom:16}}>
+        <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:8}}>
+          <span style={{width:8,height:8,borderRadius:'50%',background:'var(--positive)',display:'inline-block'}}></span>
+          <span style={{fontSize:13, fontWeight:600, color:'var(--positive)'}}>실시간 동기화 활성</span>
+        </div>
+        <div style={{fontSize:12, color:'var(--ink-3)', marginBottom:10, lineHeight:1.6}}>
+          코드: <strong>{localStorage.getItem('gf_fb_synccode')}</strong><br/>
+          같은 코드로 접속한 모든 기기에 자동 동기화됩니다.
+        </div>
+        <button className="btn" onClick={disconnect} style={{fontSize:12, color:'var(--negative)', borderColor:'var(--negative-soft)'}}>연결 해제</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{marginBottom:16}}>
+      <div style={{display:'flex', alignItems:'center', gap:6, marginBottom:10}}>
+        <span style={{width:8,height:8,borderRadius:'50%',background:dotColor,display:'inline-block'}}></span>
+        <span style={{fontSize:12, color:'var(--ink-4)'}}>{dotLabel}</span>
+      </div>
+      <Field label="Firebase API Key">
+        <TextInput type="password" placeholder="AIzaSy..." value={apiKey} onChange={e => setApiKey(e.target.value)} />
+      </Field>
+      <Field label="Project ID">
+        <TextInput placeholder="endoapp-cc066" value={projId} onChange={e => setProjId(e.target.value)} />
+      </Field>
+      <Field label="동기화 코드 (기기 간 공유)">
+        <TextInput placeholder="예: gravo2026" value={code} onChange={e => setCode(e.target.value)} />
+      </Field>
+      {error && <div style={{fontSize:12, color:'var(--negative)', marginBottom:8}}>{error}</div>}
+      <button className="btn btn-primary" onClick={connect} disabled={busy} style={{width:'100%'}}>
+        {busy ? '연결 중...' : '📡 동기화 연결'}
+      </button>
+    </div>
+  );
+}
+
 // Modal forms for adding/editing
 const { useState: mS } = React;
 
@@ -388,6 +465,10 @@ function SettingsModal({ open, onClose }) {
         </div>
       </div>
 
+
+      {/* ─── Firebase 동기화 ─── */}
+      <div style={{fontSize:12.5, color:'var(--ink-3)', textTransform:'uppercase', letterSpacing:'0.08em', fontWeight:600, marginBottom:8, marginTop:4}}>실시간 동기화</div>
+      <SyncSection />
       <div style={{fontSize:12.5, color:'var(--ink-3)', textTransform:'uppercase', letterSpacing:'0.08em', fontWeight:600, marginBottom:8}}>복구</div>
       <div style={{display:'flex', flexDirection:'column', gap:8, marginBottom:18}}>
         <button className="btn" onClick={restoreAutoBackup} disabled={!hasAutoBackup} style={{justifyContent:'flex-start', opacity: hasAutoBackup?1:0.5}}>

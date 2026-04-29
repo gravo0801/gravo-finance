@@ -1,43 +1,41 @@
-// Global reactive store with localStorage persistence
+// Global reactive store with localStorage + Firebase sync
 const STORE_KEY = 'gravo-finance-state-v2';
+const FB_SYNC_KEY_LS = 'gf_fb_apikey';
+const FB_PROJ_LS     = 'gf_fb_projid';
+const FB_CODE_LS     = 'gf_fb_synccode';
 
 const SEED = {
   month: { y: 2026, m: 4 },
   income: 4200000,
   accounts: [
-    { id: 'woori', name: '우리은행', sub: '마이너스통장', balance: -49200000, limit: 150000000, kind: 'credit-line', flowIn: 4200000, flowOut: 2800000 },
-    { id: 'shinhan', name: '신한 FNA', sub: '주거래', balance: 12400000, kind: 'checking', flowIn: 2100000, flowOut: 1600000 },
-    { id: 'nonghyup', name: '농협은행', sub: '주담대 결제', balance: 1850000, kind: 'checking', flowIn: 1300000, flowOut: 1300000 },
-    { id: 'kbank', name: '케이뱅크', sub: '비상금', balance: 5600000, kind: 'savings', flowIn: 0, flowOut: 0 },
-    { id: 'ibk', name: '기업은행', sub: 'ISA', balance: 23800000, kind: 'investment', flowIn: 1500000, flowOut: 0 },
+    { id: 'woori',    name: '우리은행',  sub: '마이너스통장', balance: -49200000, limit: 150000000, kind: 'credit-line', flowIn: 4200000, flowOut: 2800000 },
+    { id: 'shinhan',  name: '신한 FNA',  sub: '주거래',       balance: 12400000,  kind: 'checking',     flowIn: 2100000, flowOut: 1600000 },
+    { id: 'nonghyup', name: '농협은행',  sub: '주담대 결제',   balance: 1850000,   kind: 'checking',     flowIn: 1300000, flowOut: 1300000 },
+    { id: 'kbank',    name: '케이뱅크',  sub: '비상금',       balance: 5600000,   kind: 'savings',      flowIn: 0, flowOut: 0 },
+    { id: 'ibk',      name: '기업은행',  sub: 'ISA',          balance: 23800000,  kind: 'investment',   flowIn: 1500000, flowOut: 0 },
   ],
   cards: [
-    { id: 'lotte', co: '롯데카드', name: '드림클럽 플래티넘', last4: '1234', limit: 3000000, used: 380000, paymentDay: 14, gradient: 'linear-gradient(135deg,#1F2937 0%,#374151 60%,#C96442 200%)' },
-    { id: 'nh', co: '농협카드', name: 'NH 올원 하나로', last4: '5678', limit: 2000000, used: 180000, paymentDay: 14, gradient: 'linear-gradient(135deg,#1F2937 0%,#3F3530 60%,#5C8A5A 200%)' },
-    { id: 'shinhan-c', co: '신한카드', name: 'Deep Dream', last4: '9012', limit: 1000000, used: 60000, paymentDay: 14, gradient: 'linear-gradient(135deg,#0F172A 0%,#1E293B 60%,#5B6CB5 200%)' },
+    { id: 'lotte',     co: '롯데카드', name: '드림클럽 플래티넘', last4: '1234', limit: 3000000, used: 380000, paymentDay: 14, gradient: 'linear-gradient(135deg,#1F2937 0%,#374151 60%,#C96442 200%)' },
+    { id: 'nh',        co: '농협카드', name: 'NH 올원 하나로',    last4: '5678', limit: 2000000, used: 180000, paymentDay: 14, gradient: 'linear-gradient(135deg,#1F2937 0%,#3F3530 60%,#5C8A5A 200%)' },
+    { id: 'shinhan-c', co: '신한카드', name: 'Deep Dream',        last4: '9012', limit: 1000000, used: 60000,  paymentDay: 14, gradient: 'linear-gradient(135deg,#0F172A 0%,#1E293B 60%,#5B6CB5 200%)' },
   ],
   fixed: [
-    { id: 'f1', group: '주거비', day: 30, name: '주담대 원리금', meta: '농협은행 자동이체', amount: 1300000 },
-    { id: 'f2', group: '주거비', day: 25, name: '관리비', meta: '아파트 관리비', amount: 630000 },
-    { id: 'f3', group: '통신·구독', day: 5, name: 'SKT 통신비', meta: '휴대폰', amount: 89000 },
-    { id: 'f4', group: '통신·구독', day: 10, name: 'Netflix · YouTube Premium', meta: '구독', amount: 28000 },
-    { id: 'f5', group: '통신·구독', day: 15, name: 'Notion · Claude Pro', meta: '생산성', amount: 67000 },
-    { id: 'f6', group: '보험·기타', day: 20, name: '실손보험', meta: '메리츠화재', amount: 142000 },
-    { id: 'f7', group: '보험·기타', day: 22, name: '연금저축', meta: '한화생명', amount: 178000 },
+    { id: 'f1', group: '주거비',    day: 30, name: '주담대 원리금',              meta: '농협은행 자동이체', amount: 1300000 },
+    { id: 'f2', group: '주거비',    day: 25, name: '관리비',                    meta: '아파트 관리비',     amount: 630000  },
+    { id: 'f3', group: '통신·구독', day:  5, name: 'SKT 통신비',                meta: '휴대폰',            amount: 89000   },
+    { id: 'f4', group: '통신·구독', day: 10, name: 'Netflix · YouTube Premium', meta: '구독',              amount: 28000   },
+    { id: 'f5', group: '통신·구독', day: 15, name: 'Notion · Claude Pro',       meta: '생산성',            amount: 67000   },
+    { id: 'f6', group: '보험·기타', day: 20, name: '실손보험',                  meta: '메리츠화재',        amount: 142000  },
+    { id: 'f7', group: '보험·기타', day: 22, name: '연금저축',                  meta: '한화생명',          amount: 178000  },
   ],
   expenses: [
     { id: 'e1', date: '2026-04-26', cat: '식비', tone: 'indigo', mark: '식', title: '점심 식사 — 평양면옥', card: '롯데카드', amount: 12000 },
-    { id: 'e2', date: '2026-04-26', cat: '카페', tone: 'warm', mark: '커', title: 'Anthracite Coffee', card: '신한카드', amount: 5500 },
-    { id: 'e3', date: '2026-04-26', cat: '생활', tone: 'pos', mark: '생', title: 'SSG 마트 장보기', card: '농협카드', amount: 54500 },
-    { id: 'e4', date: '2026-04-25', cat: '문화', tone: 'accent', mark: '문', title: '서점 — 알라딘', card: '신한카드', amount: 38000 },
-    { id: 'e5', date: '2026-04-25', cat: '식비', tone: 'indigo', mark: '식', title: '저녁 — 광장시장', card: '롯데카드', amount: 62000 },
-    { id: 'e6', date: '2026-04-25', cat: '교통', tone: 'neg', mark: '교', title: '카카오T 택시', card: '롯데카드', amount: 38000 },
-    { id: 'e7', date: '2026-04-24', cat: '식비', tone: 'indigo', mark: '식', title: '점심 — 김밥천국', card: '롯데카드', amount: 9000 },
-    { id: 'e8', date: '2026-04-24', cat: '카페', tone: 'warm', mark: '커', title: '블루보틀', card: '신한카드', amount: 6500 },
-    { id: 'e9', date: '2026-04-24', cat: '생활', tone: 'pos', mark: '생', title: 'CU 편의점', card: '농협카드', amount: 9000 },
+    { id: 'e2', date: '2026-04-26', cat: '카페', tone: 'warm',   mark: '커', title: 'Anthracite Coffee',    card: '신한카드', amount: 5500  },
+    { id: 'e3', date: '2026-04-26', cat: '생활', tone: 'pos',    mark: '생', title: 'SSG 마트 장보기',      card: '농협카드', amount: 54500 },
   ],
 };
 
+// ── localStorage helpers ──────────────────────────
 function loadStore() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
@@ -49,44 +47,178 @@ function saveStore(s) {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch(e) {}
 }
 
+// ── Firebase sync ─────────────────────────────────
+let _fbDb       = null;
+let _fbCode     = null;
+let _fbUnsub    = null;
+let _fbTimer    = null;
+let _fbApplying = false;
+let _fbSyncStatus = { status: 'off', listeners: [] };
+
+function fbNotify(status) {
+  _fbSyncStatus.status = status;
+  _fbSyncStatus.listeners.forEach(fn => fn(status));
+}
+function fbOnStatus(fn) {
+  _fbSyncStatus.listeners.push(fn);
+  fn(_fbSyncStatus.status);
+  return () => { _fbSyncStatus.listeners = _fbSyncStatus.listeners.filter(f => f !== fn); };
+}
+
+async function fbConnect(apiKey, projectId, syncCode) {
+  fbNotify('connecting');
+  try {
+    let app;
+    try { app = firebase.app('gravo'); }
+    catch(e) { app = firebase.initializeApp({ apiKey, projectId, authDomain: `${projectId}.firebaseapp.com` }, 'gravo'); }
+    _fbDb   = firebase.firestore(app);
+    _fbCode = syncCode;
+    localStorage.setItem(FB_SYNC_KEY_LS, apiKey);
+    localStorage.setItem(FB_PROJ_LS,     projectId);
+    localStorage.setItem(FB_CODE_LS,     syncCode);
+
+    // First push current local data
+    const cur = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    if (cur) {
+      await _fbDb.doc(`gravo_finance_v2/${syncCode}`).set({ _data: JSON.stringify(cur), _ts: Date.now() });
+    }
+
+    fbStartListener();
+    fbNotify('ok');
+    return true;
+  } catch(e) {
+    fbNotify('error');
+    throw e;
+  }
+}
+
+function fbStartListener() {
+  if (_fbUnsub) _fbUnsub();
+  _fbUnsub = _fbDb.doc(`gravo_finance_v2/${_fbCode}`).onSnapshot(snap => {
+    if (!snap.exists || _fbApplying) return;
+    const remote = snap.data();
+    const localTs = +(localStorage.getItem('_gf_ts') || 0);
+    if (remote._ts <= localTs) return;
+    _fbApplying = true;
+    const parsed = JSON.parse(remote._data || '{}');
+    saveStore(parsed);
+    localStorage.setItem('_gf_ts', String(remote._ts));
+    window._gfForceReload && window._gfForceReload(parsed);
+    _fbApplying = false;
+    fbNotify('ok');
+  }, () => fbNotify('error'));
+}
+
+function fbPush(state) {
+  if (!_fbDb || !_fbCode || _fbApplying) return;
+  clearTimeout(_fbTimer);
+  _fbTimer = setTimeout(async () => {
+    const ts = Date.now();
+    await _fbDb.doc(`gravo_finance_v2/${_fbCode}`).set({ _data: JSON.stringify(state), _ts: ts });
+    localStorage.setItem('_gf_ts', String(ts));
+    fbNotify('ok');
+  }, 1200);
+}
+
+function fbDisconnect() {
+  if (_fbUnsub) { _fbUnsub(); _fbUnsub = null; }
+  _fbDb = null; _fbCode = null;
+  [FB_SYNC_KEY_LS, FB_PROJ_LS, FB_CODE_LS].forEach(k => localStorage.removeItem(k));
+  fbNotify('off');
+}
+
+async function fbAutoConnect(onReload) {
+  const apiKey    = localStorage.getItem(FB_SYNC_KEY_LS);
+  const projectId = localStorage.getItem(FB_PROJ_LS);
+  const syncCode  = localStorage.getItem(FB_CODE_LS);
+  if (!apiKey || !projectId || !syncCode) return;
+  window._gfForceReload = onReload;
+  fbNotify('connecting');
+  try {
+    let app;
+    try { app = firebase.app('gravo'); }
+    catch(e) { app = firebase.initializeApp({ apiKey, projectId, authDomain: `${projectId}.firebaseapp.com` }, 'gravo'); }
+    _fbDb = firebase.firestore(app);
+    _fbCode = syncCode;
+
+    // Pull latest from cloud first
+    const snap = await _fbDb.doc(`gravo_finance_v2/${syncCode}`).get();
+    if (snap.exists) {
+      const remote = snap.data();
+      const localTs = +(localStorage.getItem('_gf_ts') || 0);
+      if (remote._ts > localTs) {
+        const parsed = JSON.parse(remote._data || '{}');
+        saveStore(parsed);
+        localStorage.setItem('_gf_ts', String(remote._ts));
+        if (!sessionStorage.getItem('_gf_loaded')) {
+          sessionStorage.setItem('_gf_loaded', '1');
+          location.reload();
+          return;
+        }
+      }
+    }
+    fbStartListener();
+    fbNotify('ok');
+  } catch(e) {
+    fbNotify('error');
+  }
+}
+
+// ── React Store ───────────────────────────────────
 const StoreCtx = React.createContext(null);
 
 function StoreProvider({ children }) {
-  const [state, setState] = React.useState(loadStore());
-  React.useEffect(() => { saveStore(state); }, [state]);
+  const [state, setStateRaw] = React.useState(loadStore());
+
+  const setState = React.useCallback((updater) => {
+    setStateRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      saveStore(next);
+      fbPush(next);
+      return next;
+    });
+  }, []);
+
+  // Allow Firebase listener to force-reload UI
+  React.useEffect(() => {
+    window._gfForceReload = (parsed) => setStateRaw({ ...SEED, ...parsed });
+    fbAutoConnect(parsed => setStateRaw({ ...SEED, ...parsed }));
+  }, []);
 
   const api = React.useMemo(() => ({
     state,
-    setMonth: (y, m) => setState(s => ({ ...s, month: { y, m }})),
-    addExpense: (e) => setState(s => ({ ...s, expenses: [{ ...e, id: 'e' + Date.now() }, ...s.expenses] })),
+    fbConnect,
+    fbDisconnect,
+    fbOnStatus,
+    setMonth:      (y, m) => setState(s => ({ ...s, month: { y, m }})),
+    addExpense:    (e)  => setState(s => ({ ...s, expenses: [{ ...e, id: 'e' + Date.now() }, ...s.expenses] })),
     deleteExpense: (id) => setState(s => ({ ...s, expenses: s.expenses.filter(e => e.id !== id) })),
-    addFixed: (f) => setState(s => ({ ...s, fixed: [...s.fixed, { ...f, id: 'f' + Date.now() }] })),
-    deleteFixed: (id) => setState(s => ({ ...s, fixed: s.fixed.filter(f => f.id !== id) })),
+    addFixed:      (f)  => setState(s => ({ ...s, fixed: [...s.fixed, { ...f, id: 'f' + Date.now() }] })),
+    deleteFixed:   (id) => setState(s => ({ ...s, fixed: s.fixed.filter(f => f.id !== id) })),
     updateAccount: (id, patch) => setState(s => ({ ...s, accounts: s.accounts.map(a => a.id===id?{...a,...patch}:a) })),
-    addCard: (c) => setState(s => ({ ...s, cards: [...s.cards, { ...c, id: 'c' + Date.now() }] })),
-    deleteCard: (id) => setState(s => ({ ...s, cards: s.cards.filter(c => c.id !== id) })),
-    addAccount: (a) => setState(s => ({ ...s, accounts: [...s.accounts, { ...a, id: 'a' + Date.now() }] })),
+    addCard:       (c)  => setState(s => ({ ...s, cards: [...s.cards, { ...c, id: 'c' + Date.now() }] })),
+    deleteCard:    (id) => setState(s => ({ ...s, cards: s.cards.filter(c => c.id !== id) })),
+    addAccount:    (a)  => setState(s => ({ ...s, accounts: [...s.accounts, { ...a, id: 'a' + Date.now() }] })),
     deleteAccount: (id) => setState(s => ({ ...s, accounts: s.accounts.filter(a => a.id !== id) })),
-    setIncome: (n) => setState(s => ({ ...s, income: n })),
-    reset: () => { localStorage.removeItem(STORE_KEY); setState(SEED); },
+    setIncome:     (n)  => setState(s => ({ ...s, income: n })),
+    reset: () => { localStorage.removeItem(STORE_KEY); setStateRaw(SEED); },
     exportData: () => state,
     importData: (data) => {
       if (!data || typeof data !== 'object') throw new Error('Invalid data');
-      // Validate minimal shape
       const keys = ['accounts','cards','fixed','expenses'];
       for (const k of keys) {
         if (!Array.isArray(data[k])) throw new Error(`Missing or invalid: ${k}`);
       }
       setState(s => ({ ...SEED, ...data }));
     },
-  }), [state]);
+  }), [state, setState]);
 
   return <StoreCtx.Provider value={api}>{children}</StoreCtx.Provider>;
 }
 
 const useStore = () => React.useContext(StoreCtx);
 
-// Modal system
+// ── Modal system ──────────────────────────────────
 function Modal({ open, onClose, title, children, footer }) {
   if (!open) return null;
   return (
@@ -113,7 +245,6 @@ function Modal({ open, onClose, title, children, footer }) {
   );
 }
 
-// Field components
 function Field({ label, children, hint }) {
   return (
     <div style={{marginBottom:14}}>
@@ -130,13 +261,8 @@ const inputStyle = {
 };
 function TextInput(props) { return <input {...props} style={{...inputStyle, ...(props.style||{})}} />; }
 function NumberInput({ value, onChange, ...rest }) {
-  // Parse "150만" "1.5억" "1,200,000"
-  return <input
-    {...rest}
-    value={value}
-    onChange={e => onChange(parseKRW(e.target.value))}
-    style={{...inputStyle, fontFamily:'var(--mono)'}}
-  />;
+  return <input {...rest} value={value} onChange={e => onChange(parseKRW(e.target.value))}
+    style={{...inputStyle, fontFamily:'var(--mono)'}} />;
 }
 function parseKRW(str) {
   if (!str) return '';

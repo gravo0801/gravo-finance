@@ -1,0 +1,610 @@
+{
+  "month": {
+    "y": 2026,
+    "m": 4
+  },
+  "income": 13421267,
+  "accounts": [
+    {
+      "id": "woori",
+      "name": "우리은행",
+      "sub": "마이너스통장",
+      "balance": -38634974,
+      "limit": 150000000,
+      "kind": "credit-line",
+      "flowIn": 0,
+      "flowOut": 0
+    },
+    {
+      "id": "shinhan1",
+      "name": "신한 FNA",
+      "sub": "주거래",
+      "balance": 242562,
+      "kind": "checking",
+      "flowIn": 0,
+      "flowOut": 0
+    },
+    {
+      "id": "shinhan2",
+      "name": "신한(저축)",
+      "sub": "(주)연형 급여",
+      "balance": 4885532,
+      "kind": "checking",
+      "flowIn": 2300000,
+      "flowOut": 0
+    },
+    {
+      "id": "nonghyup",
+      "name": "농협은행",
+      "sub": "주담대 결제",
+      "balance": 711349,
+      "kind": "checking",
+      "flowIn": 0,
+      "flowOut": 0
+    },
+    {
+      "id": "kbank",
+      "name": "케이뱅크",
+      "sub": "적금",
+      "balance": 16664,
+      "kind": "savings",
+      "flowIn": 0,
+      "flowOut": 0
+    },
+    {
+      "id": "ibk",
+      "name": "기업은행",
+      "sub": "세금대비",
+      "balance": 3000382,
+      "kind": "investment",
+      "flowIn": 0,
+      "flowOut": 0
+    },
+    {
+      "id": "hana",
+      "name": "하나은행",
+      "sub": "이벤트자금",
+      "balance": 520183,
+      "kind": "checking",
+      "flowIn": 0,
+      "flowOut": 0
+    }
+  ],
+  "cards": [
+    {
+      "id": "c1",
+      "co": "롯데카드",
+      "name": "KT DC PLUS 롯데카드",
+      "last4": "****",
+      "limit": 1000000,
+      "used": 0,
+      "paymentDay": 14,
+      "gradient": "linear-gradient(135deg,#1F2937 0%,#374151 60%,#C96442 200%)"
+    },
+    {
+      "id": "c2",
+      "co": "롯데카드",
+      "name": "SKYPASS 롯데카드",
+      "last4": "****",
+      "limit": 1000000,
+      "used": 0,
+      "paymentDay": 14,
+      "gradient": "linear-gradient(135deg,#1F2937 0%,#374151 60%,#C96442 200%)"
+    },
+    {
+      "id": "c3",
+      "co": "신한카드",
+      "name": "네이버페이 신한카드",
+      "last4": "****",
+      "limit": 1000000,
+      "used": 0,
+      "paymentDay": 14,
+      "gradient": "linear-gradient(135deg,#0F172A 0%,#1E293B 60%,#5B6CB5 200%)"
+    },
+    {
+      "id": "c4",
+      "co": "삼성카드",
+      "name": "MILEAGE & PLATINUM",
+      "last4": "****",
+      "limit": 1000000,
+      "used": 0,
+      "paymentDay": 13,
+      "gradient": "linear-gradient(135deg,#1F2937 0%,#1E3A5F 60%,#1D4ED8 200%)"
+    },
+    {
+      "id": "c5",
+      "co": "삼성카드",
+      "name": "AMEX PLATINUM",
+      "last4": "****",
+      "limit": 1000000,
+      "used": 0,
+      "paymentDay": 13,
+      "gradient": "linear-gradient(135deg,#1F2937 0%,#1E3A5F 60%,#1D4ED8 200%)"
+    },
+    {
+      "id": "c6",
+      "co": "KB카드",
+      "name": "ROVL 시그니쳐 스카이패스",
+      "last4": "****",
+      "limit": 1000000,
+      "used": 0,
+      "paymentDay": 14,
+      "gradient": "linear-gradient(135deg,#1F2937 0%,#3D2B00 60%,#C49058 200%)"
+    },
+    {
+      "id": "c7",
+      "co": "농협카드",
+      "name": "올바른SAFE카드",
+      "last4": "****",
+      "limit": 1000000,
+      "used": 0,
+      "paymentDay": 14,
+      "gradient": "linear-gradient(135deg,#1F2937 0%,#3F3530 60%,#5C8A5A 200%)"
+    },
+    {
+      "id": "c8",
+      "co": "현대카드",
+      "name": "코스트코 리워드 현대카드",
+      "last4": "****",
+      "limit": 1000000,
+      "used": 0,
+      "paymentDay": 13,
+      "gradient": "linear-gradient(135deg,#1F2937 0%,#2D1B4E 60%,#8B5CF6 200%)"
+    },
+    {
+      "id": "c9",
+      "co": "현대카드",
+      "name": "대한항공 070카드",
+      "last4": "****",
+      "limit": 1000000,
+      "used": 0,
+      "paymentDay": 13,
+      "gradient": "linear-gradient(135deg,#1F2937 0%,#2D1B4E 60%,#8B5CF6 200%)"
+    }
+  ],
+  "fixed": [
+    {
+      "id": "f1",
+      "group": "우리은행",
+      "day": 10,
+      "name": "하나은행 이체",
+      "meta": "이벤트자금 용도",
+      "amount": 500000
+    },
+    {
+      "id": "f2",
+      "group": "우리은행",
+      "day": 10,
+      "name": "기업은행 이체",
+      "meta": "세금 대비 적립",
+      "amount": 500000
+    },
+    {
+      "id": "f3",
+      "group": "우리은행",
+      "day": 25,
+      "name": "신한은행 이체",
+      "meta": "신한 FNA주거래 입금",
+      "amount": 500000
+    },
+    {
+      "id": "f4",
+      "group": "우리은행",
+      "day": 25,
+      "name": "ISA (신한금융투자)",
+      "meta": "매달 25일",
+      "amount": 1500000
+    },
+    {
+      "id": "f5",
+      "group": "우리은행",
+      "day": 25,
+      "name": "신한금융투자 연금저축1",
+      "meta": "짝수달 25일만 이체",
+      "amount": 1500000
+    },
+    {
+      "id": "f6",
+      "group": "우리은행",
+      "day": 25,
+      "name": "메리츠증권 이체",
+      "meta": "매달 25일",
+      "amount": 1200000
+    },
+    {
+      "id": "f7",
+      "group": "우리은행",
+      "day": 27,
+      "name": "농협은행 이체",
+      "meta": "주담대 통장 입금 (원리금 재원)",
+      "amount": 2500000
+    },
+    {
+      "id": "f8",
+      "group": "우리은행",
+      "day": 30,
+      "name": "와이프 계좌 이체",
+      "meta": "생활비",
+      "amount": 1000000
+    },
+    {
+      "id": "f9",
+      "group": "우리은행",
+      "day": 27,
+      "name": "수협은행 이체",
+      "meta": "수협적금",
+      "amount": 500000
+    },
+    {
+      "id": "f10",
+      "group": "농협은행",
+      "day": 13,
+      "name": "삼성화재 실비보험",
+      "meta": "농협 계좌 자동출금",
+      "amount": 220000
+    },
+    {
+      "id": "f11",
+      "group": "농협은행",
+      "day": 14,
+      "name": "농협카드 결제",
+      "meta": "약 30~40만원 내외",
+      "amount": 350000
+    },
+    {
+      "id": "f12",
+      "group": "농협은행",
+      "day": 25,
+      "name": "암보험1",
+      "meta": "매달 25일",
+      "amount": 37900
+    },
+    {
+      "id": "f13",
+      "group": "농협은행",
+      "day": 25,
+      "name": "한화 뇌심혈관보험",
+      "meta": "매달 25일",
+      "amount": 47000
+    },
+    {
+      "id": "f14",
+      "group": "농협은행",
+      "day": 26,
+      "name": "농협은행 적금",
+      "meta": "매달 26일",
+      "amount": 300000
+    },
+    {
+      "id": "f15",
+      "group": "농협은행",
+      "day": 30,
+      "name": "주담대 원리금 상환",
+      "meta": "정기 상환",
+      "amount": 1300000
+    },
+    {
+      "id": "f16",
+      "group": "농협은행",
+      "day": 30,
+      "name": "주담대 추가 상환",
+      "meta": "약 50만원 (변동)",
+      "amount": 500000
+    },
+    {
+      "id": "f17",
+      "group": "자동결제",
+      "day": 25,
+      "name": "암보험2",
+      "meta": "한화암보험2",
+      "amount": 116500
+    },
+    {
+      "id": "f18",
+      "group": "자동결제",
+      "day": 15,
+      "name": "하나치매보험",
+      "meta": "하나치매보험",
+      "amount": 55000
+    },
+    {
+      "id": "f19",
+      "group": "자동결제",
+      "day": 11,
+      "name": "KT핸드폰결제",
+      "meta": "KT통신비",
+      "amount": 74500
+    },
+    {
+      "id": "f20",
+      "group": "자동결제",
+      "day": 11,
+      "name": "KT인터넷",
+      "meta": "KT인터넷",
+      "amount": 40700
+    },
+    {
+      "id": "f21",
+      "group": "자동결제",
+      "day": 4,
+      "name": "네이버멤버십-넷플프리미엄요금제결제",
+      "meta": "네이버멤버십-넷플프리미엄요금제결제",
+      "amount": 11500
+    },
+    {
+      "id": "f22",
+      "group": "자동결제",
+      "day": 15,
+      "name": "애플클라우드결제",
+      "meta": "애플클라우드결제",
+      "amount": 3300
+    },
+    {
+      "id": "f23",
+      "group": "자동결제",
+      "day": 6,
+      "name": "구글Gemini_클라우드결제",
+      "meta": "구글Gemini_클라우드결제",
+      "amount": 29000
+    },
+    {
+      "id": "f24",
+      "group": "자동결제",
+      "day": 4,
+      "name": "네이버플러스멤버십",
+      "meta": "네이버플러스멤버십",
+      "amount": 4900
+    },
+    {
+      "id": "f25",
+      "group": "자동결제",
+      "day": 10,
+      "name": "Grok_AI구독서비스",
+      "meta": "Grok_AI구독서비스",
+      "amount": 48000
+    },
+    {
+      "id": "f26",
+      "group": "자동결제",
+      "day": 6,
+      "name": "유투브프리미엄구독서비스",
+      "meta": "유투브프리미엄구독서비스",
+      "amount": 14900
+    },
+    {
+      "id": "f27",
+      "group": "자동결제",
+      "day": 14,
+      "name": "클로드AI구독서비스",
+      "meta": "클로드AI구독서비스",
+      "amount": 30000
+    },
+    {
+      "id": "f28",
+      "group": "자동결제",
+      "day": 25,
+      "name": "멘토즈스터디카페",
+      "meta": "스터디 공부",
+      "amount": 65000
+    }
+  ],
+  "expenses": [
+    {
+      "id": "1776477200711",
+      "date": "2026-04-18",
+      "cat": "🚕 교통",
+      "tone": "neg",
+      "mark": "교",
+      "title": "명동 택시 — 명동이동 택시",
+      "card": "MILEAGE & PLATINUM",
+      "amount": 14300
+    },
+    {
+      "id": "1776509379959",
+      "date": "2026-04-18",
+      "cat": "📦 기타",
+      "tone": "warm",
+      "mark": "기",
+      "title": "구동명 마사지 — 마사지 90분",
+      "card": "KT DC PLUS 롯데카드",
+      "amount": 99000
+    },
+    {
+      "id": "1776509446701",
+      "date": "2026-04-18",
+      "cat": "🍽️ 식사",
+      "tone": "indigo",
+      "mark": "식",
+      "title": "남대문 도너츠 — 만두 10개 1만원, 찹쌀도너츠 3개 2천원",
+      "card": "올바른SAFE카드",
+      "amount": 12000
+    },
+    {
+      "id": "1776509950597",
+      "date": "2026-04-18",
+      "cat": "📦 기타",
+      "tone": "warm",
+      "mark": "기",
+      "title": "농협카드 4월 18일 이전 사용기록 — 이전기록",
+      "card": "올바른SAFE카드",
+      "amount": 360000
+    },
+    {
+      "id": "1776509988589",
+      "date": "2026-04-18",
+      "cat": "📦 기타",
+      "tone": "warm",
+      "mark": "기",
+      "title": "롯데카드 4/18이전기록 — 이전기록",
+      "card": "SKYPASS 롯데카드",
+      "amount": 260000
+    },
+    {
+      "id": "1776510015964",
+      "date": "2026-04-18",
+      "cat": "📦 기타",
+      "tone": "warm",
+      "mark": "기",
+      "title": "네이버페이 사용기록",
+      "card": "네이버페이 신한카드",
+      "amount": 180740
+    },
+    {
+      "id": "1776510036872",
+      "date": "2026-04-18",
+      "cat": "📦 기타",
+      "tone": "warm",
+      "mark": "기",
+      "title": "KB카드 이전사용기록 — 이전기록",
+      "card": "ROVL 시그니쳐 스카이패스",
+      "amount": 35000
+    },
+    {
+      "id": "1776510065669",
+      "date": "2026-04-18",
+      "cat": "📦 기타",
+      "tone": "warm",
+      "mark": "기",
+      "title": "삼성카드 이전사용기록 — 이전기록",
+      "card": "MILEAGE & PLATINUM",
+      "amount": 95000
+    },
+    {
+      "id": "1776510118046",
+      "date": "2026-04-18",
+      "cat": "🍽️ 식사",
+      "tone": "indigo",
+      "mark": "식",
+      "title": "희락갈치 — 갈치조림 2인분 16:00 토요일",
+      "card": "올바른SAFE카드",
+      "amount": 28000
+    },
+    {
+      "id": "1776510150622",
+      "date": "2026-04-18",
+      "cat": "🍽️ 식사",
+      "tone": "indigo",
+      "mark": "식",
+      "title": "명동돈가스 — 코돈부르 19000원인데 그냥 그랬음.",
+      "card": "올바른SAFE카드",
+      "amount": 33000
+    },
+    {
+      "id": "1776601152116",
+      "date": "2026-04-19",
+      "cat": "🛍️ 쇼핑",
+      "tone": "accent",
+      "mark": "쇼",
+      "title": "코스트코 — 코스트코 쇼핑, 식비",
+      "card": "코스트코 리워드 현대카드",
+      "amount": 111540
+    },
+    {
+      "id": "1776680459355",
+      "date": "2026-04-20",
+      "cat": "📦 기타",
+      "tone": "warm",
+      "mark": "기",
+      "title": "멘토즈스터디카페 — 5월 20일까지.",
+      "card": "네이버페이 신한카드",
+      "amount": 46000
+    },
+    {
+      "id": "1776743224813",
+      "date": "2026-04-21",
+      "cat": "🍽️ 식사",
+      "tone": "indigo",
+      "mark": "식",
+      "title": "카레돈까스",
+      "card": "KT DC PLUS 롯데카드",
+      "amount": 13000
+    },
+    {
+      "id": "1776745397764",
+      "date": "2026-04-21",
+      "cat": "📦 기타",
+      "tone": "warm",
+      "mark": "기",
+      "title": "미용실",
+      "card": "네이버페이 신한카드",
+      "amount": 86700
+    },
+    {
+      "id": "1776846296370",
+      "date": "2026-04-22",
+      "cat": "🍽️ 식사",
+      "tone": "indigo",
+      "mark": "식",
+      "title": "부미면옥 점심",
+      "card": "KT DC PLUS 롯데카드",
+      "amount": 26000
+    },
+    {
+      "id": "1776846330101",
+      "date": "2026-04-22",
+      "cat": "🍽️ 식사",
+      "tone": "indigo",
+      "mark": "식",
+      "title": "카페 over the rainbow",
+      "card": "KT DC PLUS 롯데카드",
+      "amount": 9800
+    },
+    {
+      "id": "1776943626461",
+      "date": "2026-04-23",
+      "cat": "🍽️ 식사",
+      "tone": "indigo",
+      "mark": "식",
+      "title": "인하순대국 점심식사",
+      "card": "KT DC PLUS 롯데카드",
+      "amount": 10000
+    },
+    {
+      "id": "1776943675639",
+      "date": "2026-04-23",
+      "cat": "📦 기타",
+      "tone": "warm",
+      "mark": "기",
+      "title": "3pop피씨방",
+      "card": "KT DC PLUS 롯데카드",
+      "amount": 5700
+    },
+    {
+      "id": "1776943726939",
+      "date": "2026-04-23",
+      "cat": "📦 기타",
+      "tone": "warm",
+      "mark": "기",
+      "title": "프린트스캔",
+      "card": "KT DC PLUS 롯데카드",
+      "amount": 700
+    },
+    {
+      "id": "1777026808508",
+      "date": "2026-04-24",
+      "cat": "🍽️ 식사",
+      "tone": "indigo",
+      "mark": "식",
+      "title": "멘츠루 점심식사 — 가라아게. 라멘",
+      "card": "KT DC PLUS 롯데카드",
+      "amount": 18000
+    },
+    {
+      "id": "1777165647195",
+      "date": "2026-04-25",
+      "cat": "🍽️ 식사",
+      "tone": "indigo",
+      "mark": "식",
+      "title": "점심식사",
+      "card": "KT DC PLUS 롯데카드",
+      "amount": 63500
+    }
+  ],
+  "_migrated_from": "gravo-backup-20260428.json",
+  "_mortgage": {
+    "balance": 182480000,
+    "original": 300000000,
+    "autoPayment": 1272220,
+    "extraPayment": 500000
+  }
+}
