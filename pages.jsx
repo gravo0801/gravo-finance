@@ -62,14 +62,27 @@ function DashboardPage({ openExpense, openCard }) {
   const woori    = store.state.accounts.find(a=>a.id==='woori')||store.state.accounts[0];
   const curMinus = woori?.balance||0;
   const overrides = (store.state.fixedOverrides||{})[ym]||{};
-  const mfaDash   = (store.state.monthlyFixedAmounts||{})[ym]||{}; // 이달 금액 오버라이드
+  const mfaDash   = (store.state.monthlyFixedAmounts||{})[ym]||{};
   const getFixedAmt = (f) => mfaDash[f.id]!==undefined ? mfaDash[f.id] : f.amount;
 
-  // 날짜 기반: 완료(지난 것) vs 예정(앞으로)
+  // ── 고정비: 고정비 탭과 완전히 동일한 로직 ──
+  // 1) 농협은행·자동결제 그룹 제외
+  // 2) meta에 '농협' 포함된 항목도 제외 (주담대가 '주거비' 그룹으로 저장된 경우 대비)
+  // 3) 이달 오버라이드(토글 OFF) 제외
+  const NONWOORI_GROUPS = ['농협은행','자동결제'];
+  const isNonWoori = (f) =>
+    NONWOORI_GROUPS.includes(f.group) ||
+    (f.meta||'').includes('농협은행') ||
+    (f.name||'').includes('주담대');
+
   const now2 = new Date();
   const todayDay2 = now2.getDate();
   const isCurMonth = y===now2.getFullYear() && m===now2.getMonth()+1;
-  const activeFixed = store.state.fixed.filter(f=>overrides[f.id]!==false);
+  // 우리은행 관련 + 이달 토글 ON 항목만
+  const activeFixed = store.state.fixed.filter(f=>
+    overrides[f.id]!==false &&
+    !isNonWoori(f)
+  );
   const pendingFixed = isCurMonth
     ? activeFixed.filter(f => f.day >= todayDay2)
     : activeFixed;
@@ -699,10 +712,15 @@ function FixedCostsPage({ openFixed }) {
   const overrides = (store.state.fixedOverrides || {})[targetYm] || {};
   const mfa       = (store.state.monthlyFixedAmounts || {})[targetYm] || {}; // month-specific amounts
 
-  // 우리은행 관련 고정비만 표시 (농협, 자동결제 제외)
-  // group이 '농협은행' 이거나 '자동결제' 이면 제외
+  // 우리은행 관련 고정비만 — 농협은행/자동결제 그룹 + 주담대 메타 포함 항목 제외
+  const NONWOORI_GROUPS = ['농협은행','자동결제'];
+  const isNonWoori = (f) =>
+    NONWOORI_GROUPS.includes(f.group) ||
+    (f.meta||'').includes('농협은행') ||
+    (f.name||'').includes('주담대');
+
   const wooriFixed = uSe(() =>
-    store.state.fixed.filter(f => f.group !== '농협은행' && f.group !== '자동결제'),
+    store.state.fixed.filter(f => !isNonWoori(f)),
     [store.state.fixed]
   );
 
