@@ -109,13 +109,15 @@ function DashboardPage({ openExpense, openCard }) {
   const [editBudget, setEditBudget] = uS(false);
   const [minusVal,   setMinusVal]   = uS('');
   const [budgetVal,  setBudgetVal]  = uS('');
+  const [cardExpanded, setCardExpanded] = uS(false); // 카드소비 기본 접힘
 
   const box = (color) => ({
     background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-lg)',
     padding:'20px 22px', position:'relative', overflow:'visible', borderTop:`3px solid ${color}`
   });
   const lbl = {fontSize:11,fontWeight:700,color:'var(--ink-3)',textTransform:'uppercase',letterSpacing:'0.09em',marginBottom:8};
-  const num = {fontFamily:'var(--mono)',fontSize:26,fontWeight:700,letterSpacing:'-0.03em',lineHeight:1};
+  // serif 스타일 숫자 — AccountsPage와 동일
+  const num = {fontFamily:'var(--serif)',fontSize:28,fontWeight:400,letterSpacing:'-0.03em',lineHeight:1.1};
   const editBtnEl = (fn) => (
     <button onClick={fn} style={{position:'absolute',top:12,right:12,background:'transparent',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',padding:'3px 9px',fontSize:11,cursor:'pointer',color:'var(--ink-3)'}}>수정</button>
   );
@@ -205,28 +207,57 @@ function DashboardPage({ openExpense, openCard }) {
         </div>
       </div>
 
-      {/* 카드 소비 현황 — 자동결제 선예약 + 잔여 소비가능액 */}
+      {/* 카드 소비 현황 — 접기/펼치기 */}
       <div className="card" style={{marginBottom:16}}>
-        <div className="card-head">
-          <div><div className="card-title">이달 <em>카드 소비</em></div><div className="card-sub">{monthExp.length}건</div></div>
+        <div className="card-head" style={{cursor:'pointer'}} onClick={()=>setCardExpanded(v=>!v)}>
+          <div>
+            <div className="card-title">이달 <em>카드 소비</em></div>
+            <div className="card-sub">{monthExp.length}건 · {fmtKRW(expTotal)} · {budgetPct.toFixed(0)}% 사용</div>
+          </div>
           <div style={{display:'flex', gap:8, alignItems:'center'}}>
-            {editBudget ? (
+            {!cardExpanded && (
               <div style={{display:'flex', gap:6}}>
-                <input type="number" value={budgetVal} onChange={e=>setBudgetVal(e.target.value)} placeholder="전체예산"
-                  style={{width:100, padding:'6px 9px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, fontFamily:'var(--mono)', background:'var(--bg)'}} />
-                <button className="btn btn-primary btn-sm" onClick={()=>{const v=parseInt(budgetVal);if(!isNaN(v)){store.setCardBudget(v);toast('예산 설정됨');}setEditBudget(false);}}>저장</button>
-                <button className="btn btn-sm" onClick={()=>setEditBudget(false)}>취소</button>
+                {store.state.cards.slice(0,3).map(c => {
+                  const matchCard2 = (ec,co) => !ec||!co?false:ec===co||ec.includes(co)||co.includes(ec.replace('카드','').trim());
+                  const sp = monthExp.filter(e=>matchCard2(e.card,c.co)).reduce((s,e)=>s+e.amount,0);
+                  return sp>0 ? <span key={c.id} style={{fontSize:11,fontFamily:'var(--mono)',color:'var(--negative)',background:'var(--paper-2)',padding:'2px 7px',borderRadius:4}}>{c.co.replace('카드','')} {fmtKRW(sp,{compact:true})}</span> : null;
+                })}
               </div>
-            ) : (
-              <button className="btn btn-sm" onClick={()=>{setBudgetVal(String(cardBudget));setEditBudget(true);}}>총예산 {fmtKRW(cardBudget,{compact:true})}</button>
             )}
+            <span style={{fontSize:18,color:'var(--ink-3)',lineHeight:1,transform:cardExpanded?'rotate(180deg)':'rotate(0)',transition:'transform .2s'}}>⌄</span>
           </div>
         </div>
 
-        {/* 카드별 상세 — 자동결제 예약 + 실사용 + 잔여 */}
-        {store.state.cards.map(c => (
-          <CardSpendingRow key={c.id} c={c} monthExp={monthExp} store={store} toast={toast} />
-        ))}
+        {/* 전체 예산 바 — 항상 표시 */}
+        <div style={{marginBottom: cardExpanded ? 14 : 0}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+            <div style={{display:'flex',gap:6,alignItems:'center'}}>
+              <span style={{fontSize:11,color:'var(--ink-4)'}}>예산 대비</span>
+              {editBudget ? (
+                <div style={{display:'flex',gap:5}}>
+                  <input type="number" value={budgetVal} onChange={e=>setBudgetVal(e.target.value)} style={{width:90,padding:'3px 7px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:12,fontFamily:'var(--mono)',background:'var(--bg)'}} />
+                  <button className="btn btn-primary btn-sm" onClick={()=>{const v=parseInt(budgetVal);if(!isNaN(v)){store.setCardBudget(v);toast('예산 설정됨');}setEditBudget(false);}}>저장</button>
+                  <button className="btn btn-sm" onClick={()=>setEditBudget(false)}>✕</button>
+                </div>
+              ) : (
+                <button className="btn btn-sm" style={{fontSize:10,padding:'2px 7px'}} onClick={e=>{e.stopPropagation();setBudgetVal(String(cardBudget));setEditBudget(true);}}>예산 {fmtKRW(cardBudget,{compact:true})}</button>
+              )}
+            </div>
+            <span style={{fontSize:12,fontFamily:'var(--mono)',fontWeight:600,color:budgetPct>80?'var(--negative)':'var(--ink-2)'}}>{fmtKRW(expTotal)} / {fmtKRW(cardBudget)}</span>
+          </div>
+          <div style={{height:6,background:'var(--paper-2)',borderRadius:3,overflow:'hidden'}}>
+            <div style={{height:'100%',background:budgetPct>80?'var(--negative)':budgetPct>60?'var(--warm)':'var(--accent)',width:budgetPct+'%',borderRadius:3,transition:'width .5s'}}></div>
+          </div>
+        </div>
+
+        {/* 카드별 상세 — 펼쳐야 보임 */}
+        {cardExpanded && (
+          <div style={{marginTop:14, borderTop:'1px solid var(--line)', paddingTop:14}}>
+            {store.state.cards.map(c => (
+              <CardSpendingRow key={c.id} c={c} monthExp={monthExp} store={store} toast={toast} />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 카드 한도 */}
@@ -437,70 +468,156 @@ function FlowMapPage() {
   const [editSalary,setEditSalary]=uS(false);
   const [salaryVal,setSalaryVal]=uS('');
 
-  const salary   = ((store.state.monthlySalaries||{})[ym])||store.state.income;
-  const woori    = store.state.accounts.find(a=>a.id==='woori');
-  const curMinus = woori?.balance||0;
-  const overrides= (store.state.fixedOverrides||{})[ym]||{};
+  const salary    = ((store.state.monthlySalaries||{})[ym])||store.state.income;
+  const salaryDay = store.state.salaryDay || 25;
+  const woori     = store.state.accounts.find(a=>a.id==='woori');
+  const curMinus  = woori?.balance||0;
+  const overrides = (store.state.fixedOverrides||{})[ym]||{};
   const activeFixed = store.state.fixed.filter(f=>overrides[f.id]!==false);
-  const fixedTotal  = activeFixed.reduce((s,f)=>s+f.amount,0);
   const cardBill    = ((store.state.monthlyCardBills||{})[ym])||{};
   const cardBillTotal = cardBill.total||0;
+
+  // ── 올바른 30일 예상 로직 ──
+  // 현재 잔액은 오늘까지 일어난 모든 입출금이 반영된 실제값
+  // 따라서 오늘 이후 남은 것만 계산하면 됨
+  const now2 = new Date();
+  const todayDay2 = now2.getDate();
+  const isCurMonth = y===now2.getFullYear() && m===now2.getMonth()+1;
+  // 오늘 이후 나가는 고정비 (day > today)
+  const remainingFixed = isCurMonth
+    ? activeFixed.filter(f => f.day > todayDay2).reduce((s,f)=>s+f.amount,0)
+    : activeFixed.reduce((s,f)=>s+f.amount,0);
+  // 오늘 이후 들어오는 급여 (아직 안 받은 경우)
+  const remainingSalary = (isCurMonth && salaryDay > todayDay2) ? salary : 0;
+  // 카드대금 (아직 안 나간 경우)
+  const cardPayMaxDay = store.state.cards.reduce((m,c)=>Math.max(m,c.paymentDay||14),14);
+  const remainingCardBill = (isCurMonth && cardPayMaxDay > todayDay2) ? cardBillTotal : 0;
+  const predicted30 = curMinus + remainingSalary - remainingFixed - remainingCardBill;
+
   const groups = {};
   activeFixed.forEach(f=>{ if(!groups[f.group])groups[f.group]=[]; groups[f.group].push(f); });
-  const boxSt = (bg,bdr)=>({padding:'14px 16px',background:bg,border:`1px solid ${bdr}`,borderRadius:'var(--r-md)',marginBottom:10});
-  const rowSt = {display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',borderBottom:'1px solid var(--line)',fontSize:13};
+
+  // 노드 스타일 헬퍼
+  const node = (bg, border, accent) => ({
+    background: bg, border: `2px solid ${border}`, borderRadius: 14,
+    padding: '14px 18px', position: 'relative', boxShadow: `0 2px 12px ${accent}22`
+  });
+  const arrow = { display:'flex', alignItems:'center', justifyContent:'center', color:'var(--ink-3)', fontSize:20, margin:'4px 0', userSelect:'none' };
+  const lbl = { fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.09em', marginBottom:4 };
+  const bigNum = (color) => ({ fontFamily:'var(--serif)', fontSize:26, fontWeight:400, letterSpacing:'-0.03em', color, lineHeight:1.1 });
+  const rowSt = { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'5px 0', borderBottom:'1px solid var(--line)', fontSize:12.5 };
 
   return (
     <div className="tab-content">
-      <PageHeader eyebrow="Flow" title="How money " titleEm="travels." sub="실제 데이터 기반 자금 흐름" />
+      <PageHeader eyebrow="Flow" title="자금 흐름 " titleEm="모식도" sub="급여 → 우리은행 허브 → 각 고정비 출금 경로" />
 
-      <div style={boxSt('var(--paper)','var(--line)')}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}>
-          <div>
-            <div style={{fontSize:11,fontWeight:700,color:'var(--positive)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6}}>📥 {m}월 급여 (매달 25일 입금)</div>
+      {/* 다이어그램 레이아웃 */}
+      <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:0, maxWidth:680, margin:'0 auto'}}>
+
+        {/* 소득 노드 */}
+        <div style={{...node('color-mix(in oklab,var(--positive) 8%,var(--paper))','var(--positive)','#10B981'), width:'100%', maxWidth:420}}>
+          <div style={{...lbl, color:'var(--positive)'}}>📥 급여 수입 · {salaryDay}일 입금</div>
+          <div style={{display:'flex', alignItems:'baseline', gap:12, justifyContent:'space-between'}}>
             {editSalary ? (
-              <div style={{display:'flex',gap:8,alignItems:'center',marginTop:6}}>
-                <input type="number" value={salaryVal} onChange={e=>setSalaryVal(e.target.value)} placeholder="급여 입력" style={{width:160,padding:'8px 10px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:14,fontFamily:'var(--mono)',background:'var(--bg)'}} />
+              <div style={{display:'flex',gap:8,alignItems:'center',flex:1}}>
+                <input type="number" value={salaryVal} onChange={e=>setSalaryVal(e.target.value)}
+                  style={{flex:1,padding:'7px 10px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:14,fontFamily:'var(--mono)',background:'var(--bg)'}} />
                 <button className="btn btn-primary btn-sm" onClick={()=>{const v=parseInt(salaryVal);if(!isNaN(v)){store.setSalaryForMonth(ym,v);toast('급여 저장됨');}setEditSalary(false);}}>저장</button>
                 <button className="btn btn-sm" onClick={()=>setEditSalary(false)}>취소</button>
               </div>
             ) : (
-              <div style={{display:'flex',alignItems:'baseline',gap:12,marginTop:4}}>
-                <span className="serif" style={{fontSize:28,fontWeight:500,color:'var(--positive)'}}>{fmtKRW(salary)}</span>
-                <button className="btn btn-sm" onClick={()=>{setSalaryVal(String(salary));setEditSalary(true);}}>이달 급여 입력</button>
-              </div>
+              <>
+                <div style={bigNum('var(--positive)')}>{fmtKRW(salary)}</div>
+                <button className="btn btn-sm" onClick={()=>{setSalaryVal(String(salary));setEditSalary(true);}}>수정</button>
+              </>
             )}
           </div>
-          <div style={{textAlign:'right',fontSize:12,color:'var(--ink-3)',lineHeight:1.8}}>→ 우리은행 마이너스통장<br/><span style={{fontSize:11}}>가변 항목 · 매달 직접 입력</span></div>
+          {isCurMonth && salaryDay <= todayDay2 && <div style={{fontSize:11,color:'var(--positive)',marginTop:4}}>✅ 이달 수령 완료</div>}
         </div>
-      </div>
 
-      <div style={boxSt('color-mix(in oklab, var(--accent) 5%, var(--paper))','var(--accent-line)')}>
-        <div style={{fontSize:11,fontWeight:700,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:10}}>🏦 우리은행 마이너스통장 (허브)</div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
-          <div><div style={{fontSize:11,color:'var(--ink-4)',marginBottom:3}}>현재 잔액</div><div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:'var(--negative)'}}>{fmtKRW(curMinus)}</div></div>
-          <div><div style={{fontSize:11,color:'var(--ink-4)',marginBottom:3}}>이달 유입 (급여)</div><div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:'var(--positive)'}}>+{fmtKRW(salary)}</div></div>
-          <div><div style={{fontSize:11,color:'var(--ink-4)',marginBottom:3}}>30일 예상</div><div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:(curMinus+salary-fixedTotal-cardBillTotal)>curMinus?'var(--positive)':'var(--negative)'}}>{fmtKRW(curMinus+salary-fixedTotal-cardBillTotal)}</div></div>
-        </div>
-      </div>
+        {/* 화살표 ↓ */}
+        <div style={arrow}>↓</div>
 
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:12}}>
-        <div style={boxSt('var(--paper)','var(--line)')}>
-          <div style={{fontSize:11,fontWeight:700,color:'#5B6CB5',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>💳 카드 청구 ({m}월)</div>
-          {store.state.cards.map(c=>{ const amt=cardBill.breakdown?.[c.id]||0; return amt>0?(<div key={c.id} style={rowSt}><span>{c.co}</span><span style={{fontFamily:'var(--mono)',fontWeight:600,color:'var(--negative)'}}>−{fmtKRW(amt)}</span></div>):null; })}
-          <div style={{...rowSt,borderBottom:'none',fontWeight:700}}><span>합계</span><span style={{fontFamily:'var(--mono)',color:'var(--negative)'}}>−{fmtKRW(cardBillTotal)}</span></div>
-        </div>
-        {Object.entries(groups).map(([grp,items])=>(
-          <div key={grp} style={boxSt('var(--paper)','var(--line)')}>
-            <div style={{fontSize:11,fontWeight:700,color:'var(--warm)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>{grp}</div>
-            {items.sort((a,b)=>a.day-b.day).map(f=>(<div key={f.id} style={rowSt}><span style={{fontSize:12.5}}>{f.day}일 {f.name}</span><span style={{fontFamily:'var(--mono)',fontWeight:600,color:'var(--negative)'}}>−{fmtKRW(f.amount)}</span></div>))}
-            <div style={{...rowSt,borderBottom:'none',fontWeight:700}}><span>소계</span><span style={{fontFamily:'var(--mono)',color:'var(--negative)'}}>−{fmtKRW(items.reduce((s,f)=>s+f.amount,0))}</span></div>
+        {/* 우리은행 허브 노드 */}
+        <div style={{...node('color-mix(in oklab,var(--accent) 7%,var(--paper))','var(--accent)','var(--accent)'), width:'100%', maxWidth:420}}>
+          <div style={{...lbl, color:'var(--accent)'}}>🏦 우리은행 마이너스통장 — 허브</div>
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginTop:4}}>
+            <div>
+              <div style={{fontSize:11,color:'var(--ink-4)',marginBottom:3}}>현재 잔액</div>
+              <div style={bigNum('var(--negative)')}>{fmtKRW(curMinus)}</div>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:'var(--ink-4)',marginBottom:3}}>
+                {isCurMonth ? `${new Date().getDate()}일 기준 30일 예상` : '월말 예상'}
+              </div>
+              <div style={bigNum(predicted30>=curMinus?'var(--positive)':'var(--negative)')}>{fmtKRW(predicted30)}</div>
+              <div style={{fontSize:10.5,color:'var(--ink-4)',marginTop:3,lineHeight:1.6}}>
+                {isCurMonth ? (
+                  <>
+                    {remainingSalary>0 && `+급여 ${fmtKRW(remainingSalary,{compact:true})} `}
+                    {remainingFixed>0 && `−고정비 ${fmtKRW(remainingFixed,{compact:true})} `}
+                    {remainingCardBill>0 && `−카드 ${fmtKRW(remainingCardBill,{compact:true})}`}
+                    {remainingSalary===0&&remainingFixed===0&&remainingCardBill===0 && '오늘 이후 추가 입출금 없음'}
+                  </>
+                ) : ''}
+              </div>
+            </div>
           </div>
-        ))}
-        <div style={{...boxSt('color-mix(in oklab, var(--negative) 5%, var(--paper))','color-mix(in oklab, var(--negative) 30%, transparent)'),display:'flex',flexDirection:'column',justifyContent:'center'}}>
-          <div style={{fontSize:11,fontWeight:700,color:'var(--negative)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>📤 이달 총 출금</div>
-          <div style={{fontFamily:'var(--mono)',fontSize:24,fontWeight:700,color:'var(--negative)',marginBottom:8}}>−{fmtKRW(fixedTotal+cardBillTotal)}</div>
-          <div style={{fontSize:12,color:'var(--ink-3)',lineHeight:1.8}}><div>고정비: {fmtKRW(fixedTotal)}</div><div>카드:   {fmtKRW(cardBillTotal)}</div></div>
+          {woori?.limit && (
+            <div style={{marginTop:12}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--ink-4)',marginBottom:3}}>
+                <span>한도 사용률</span>
+                <span>{(Math.abs(curMinus)/woori.limit*100).toFixed(1)}%</span>
+              </div>
+              <div style={{height:5,background:'var(--paper-2)',borderRadius:3,overflow:'hidden'}}>
+                <div style={{height:'100%',background:'var(--negative)',borderRadius:3,width:Math.min(Math.abs(curMinus)/woori.limit*100,100)+'%'}}></div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 화살표 ↓ */}
+        <div style={arrow}>↓</div>
+
+        {/* 출금 노드들 가로 배열 */}
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))', gap:10, width:'100%'}}>
+          {/* 카드 청구 */}
+          {cardBillTotal > 0 && (
+            <div style={node('var(--paper)','#5B6CB5','#5B6CB5')}>
+              <div style={{...lbl,color:'#5B6CB5'}}>💳 카드 청구</div>
+              <div style={bigNum('#5B6CB5')}>−{fmtKRW(cardBillTotal,{compact:true})}</div>
+              <div style={{marginTop:8}}>
+                {store.state.cards.map(c=>{ const amt=cardBill.breakdown?.[c.id]||0; return amt>0?(<div key={c.id} style={{fontSize:11,display:'flex',justifyContent:'space-between',padding:'2px 0',color:'var(--ink-3)'}}><span>{c.co}</span><span style={{fontFamily:'var(--mono)'}}>{fmtKRW(amt,{compact:true})}</span></div>):null; })}
+              </div>
+              {isCurMonth && cardPayMaxDay <= todayDay2 && <div style={{fontSize:10,color:'var(--ink-3)',marginTop:4}}>✅ 결제 완료</div>}
+            </div>
+          )}
+
+          {/* 고정비 그룹별 */}
+          {Object.entries(groups).filter(([g])=>g!=='농협은행'&&g!=='자동결제').map(([grp,items])=>{
+            const grpTotal = items.reduce((s,f)=>s+f.amount,0);
+            const isPast = isCurMonth && items.every(f=>f.day < todayDay2);
+            return (
+              <div key={grp} style={node('var(--paper)',isPast?'var(--ink-3)':'var(--warm)',isPast?'#888':'var(--warm)')}>
+                <div style={{...lbl,color:isPast?'var(--ink-3)':'var(--warm)'}}>{grp}</div>
+                <div style={bigNum(isPast?'var(--ink-3)':'var(--negative)')}>−{fmtKRW(grpTotal,{compact:true})}</div>
+                <div style={{marginTop:8}}>
+                  {items.sort((a,b)=>a.day-b.day).map(f=>(<div key={f.id} style={{fontSize:11,display:'flex',justifyContent:'space-between',padding:'2px 0',color:'var(--ink-3)'}}><span>{f.day}일 {f.name}</span><span style={{fontFamily:'var(--mono)'}}>{fmtKRW(f.amount,{compact:true})}</span></div>))}
+                </div>
+                {isPast && <div style={{fontSize:10,color:'var(--ink-3)',marginTop:4}}>✅ 완료</div>}
+              </div>
+            );
+          })}
+
+          {/* 이달 합계 */}
+          <div style={{...node('color-mix(in oklab,var(--negative) 6%,var(--paper))','var(--negative)','var(--negative)'), display:'flex', flexDirection:'column', justifyContent:'center'}}>
+            <div style={{...lbl,color:'var(--negative)'}}>📤 이달 총 출금</div>
+            <div style={bigNum('var(--negative)')}>−{fmtKRW(activeFixed.reduce((s,f)=>s+f.amount,0)+cardBillTotal,{compact:true})}</div>
+            <div style={{fontSize:11.5,color:'var(--ink-3)',marginTop:8,lineHeight:1.8}}>
+              <div>고정비 {fmtKRW(activeFixed.reduce((s,f)=>s+f.amount,0),{compact:true})}</div>
+              {cardBillTotal>0&&<div>카드 {fmtKRW(cardBillTotal,{compact:true})}</div>}
+            </div>
+          </div>
         </div>
       </div>
     </div>
