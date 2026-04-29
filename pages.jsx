@@ -247,13 +247,32 @@ function DashboardPage({ openExpense, openCard }) {
         )}
       </div>
 
-      {/* 카드 한도 */}
-      <div className="card">
-        <div className="card-head"><div className="card-title">신용카드 <em>한도 사용률</em></div><button className="btn btn-sm btn-primary" onClick={openCard}>+ 카드</button></div>
-        {store.state.cards.map(c=>{
-          const pct=c.limit?(c.used/c.limit)*100:0; const isHigh=pct>70;
-          return <CardUsageEditRow key={c.id} c={c} pct={pct} isHigh={isHigh} store={store} toast={toast} />;
-        })}
+      {/* 카드 한도 — 컴팩트 인라인 */}
+      <div className="card" style={{padding:'14px 18px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+          <div className="card-title" style={{fontSize:13.5}}>신용카드 <em>한도</em></div>
+          <button className="btn btn-sm" onClick={openCard}>+ 카드</button>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {store.state.cards.map(c=>{
+            const pct=c.limit?(c.used/c.limit)*100:0;
+            const isHigh=pct>70;
+            return (
+              <div key={c.id} style={{display:'flex',alignItems:'center',gap:10}}>
+                <div style={{width:80,fontSize:12,color:'var(--ink-2)',flexShrink:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.co}</div>
+                <div style={{flex:1,height:5,background:'var(--paper-2)',borderRadius:3,overflow:'hidden'}}>
+                  <div style={{height:'100%',background:isHigh?'var(--negative)':'var(--accent)',borderRadius:3,width:pct+'%',transition:'width .5s'}}></div>
+                </div>
+                <div style={{fontSize:12,fontFamily:'var(--mono)',color:isHigh?'var(--negative)':'var(--ink-3)',flexShrink:0,width:90,textAlign:'right'}}>
+                  {fmtKRW(c.used,{compact:true})} / {fmtKRW(c.limit,{compact:true})}
+                </div>
+                <div style={{fontSize:11,fontFamily:'var(--mono)',color:isHigh?'var(--negative)':'var(--ink-4)',flexShrink:0,width:38,textAlign:'right'}}>
+                  {pct.toFixed(0)}%
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -727,7 +746,7 @@ function FixedCostsPage({ openFixed }) {
 
       {/* 요약 타일 */}
       {isCurrentMonth ? (
-        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))', gap:12, marginBottom:16}}>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:16}}>
           {[
             {label:`✅ 완료 (${completedItems.length}건)`, val:completedTotal, sub:'이미 빠져나간 금액', color:'var(--ink-3)'},
             {label:`⏳ 예정 (${pendingItems.length}건)`,  val:pendingTotal,   sub:'앞으로 나갈 금액',  color:'var(--negative)'},
@@ -1328,7 +1347,7 @@ function AnalyticsPage() {
 // SHARED HELPERS
 // ─────────────────────────────────────────────────────────
 
-// 주담대 현황 박스
+// 주담대 현황 박스 — 깔끔한 serif 숫자 스타일
 function MortgageBox({ store, toast }) {
   const [editing, setEditing] = uS(false);
   const mg = store.state.mortgage || {};
@@ -1336,66 +1355,81 @@ function MortgageBox({ store, toast }) {
   const original = mg.original || 300000000;
   const rate     = mg.rate     || 4.66;
   const autoAmt  = mg.autoPayment || 1272220;
-  const extraAmt = (mg.extraPayment||500000) + (mg.wifePayment||500000);
-  const totalMonthly = autoAmt + extraAmt;
-  const paidPct  = ((original - balance) / original * 100).toFixed(1);
+  const extra    = (mg.extraPayment||500000) + (mg.wifePayment||500000);
+  const totalMonthly = autoAmt + extra;
+  const paidPct  = Math.min((original - balance) / original * 100, 100);
   const monthsLeft = balance > 0 ? Math.ceil(balance / totalMonthly) : 0;
 
-  const [b, setB] = uS(balance);
-  const [r, setR] = uS(rate);
-  const [a, setA] = uS(autoAmt);
+  const [b, setB]   = uS(balance);
+  const [r, setR]   = uS(rate);
+  const [a, setA]   = uS(autoAmt);
   const [ex, setEx] = uS(mg.extraPayment||500000);
   const [wf, setWf] = uS(mg.wifePayment||500000);
-  const st = {padding:'7px 10px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:13,background:'var(--bg)',fontFamily:'var(--mono)'};
+  const inpSt = {padding:'7px 10px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--bg)', fontFamily:'var(--mono)', width:'100%'};
+
+  if (editing) {
+    return (
+      <div style={{background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-lg)', padding:'18px 22px', marginBottom:14, borderTop:'3px solid #10B981'}}>
+        <div style={{fontSize:11,fontWeight:700,color:'#10B981',textTransform:'uppercase',letterSpacing:'0.09em',marginBottom:14}}>🏠 주담대 정보 수정</div>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))', gap:10, marginBottom:14}}>
+          {[
+            {label:'현재 잔액', val:b, set:setB},
+            {label:'금리 (%)', val:r, set:setR, step:0.01},
+            {label:'고정 원리금/월', val:a, set:setA},
+            {label:'본인 추가상환/월', val:ex, set:setEx},
+            {label:'와이프 추가상환/월', val:wf, set:setWf},
+          ].map(({label,val,set,step},i) => (
+            <div key={i}>
+              <div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:4}}>{label}</div>
+              <input type="number" value={val} step={step||1} onChange={e=>set(+e.target.value)} style={inpSt} />
+            </div>
+          ))}
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <button className="btn btn-primary btn-sm" onClick={()=>{store.updateMortgage({balance:b,rate:r,autoPayment:a,extraPayment:ex,wifePayment:wf});toast('저장됨');setEditing(false);}}>저장</button>
+          <button className="btn btn-sm" onClick={()=>setEditing(false)}>취소</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{
-      background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-lg)',
-      padding:'18px 22px', marginBottom:14, borderTop:'3px solid #10B981', position:'relative'
-    }}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12}}>
-        <div style={{flex:1}}>
-          <div style={{fontSize:11,fontWeight:700,color:'#10B981',textTransform:'uppercase',letterSpacing:'0.09em',marginBottom:6}}>
-            🏠 주담대 — {mg.bank||'농협은행'} {rate}%
-          </div>
-          {editing ? (
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:8,marginBottom:10}}>
-              <div><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>현재 잔액</div><input type="number" value={b} onChange={e=>setB(+e.target.value)} style={st} /></div>
-              <div><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>금리(%)</div><input type="number" step="0.01" value={r} onChange={e=>setR(+e.target.value)} style={st} /></div>
-              <div><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>고정 원리금</div><input type="number" value={a} onChange={e=>setA(+e.target.value)} style={st} /></div>
-              <div><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>본인 추가상환</div><input type="number" value={ex} onChange={e=>setEx(+e.target.value)} style={st} /></div>
-              <div><div style={{fontSize:10.5,color:'var(--ink-4)',marginBottom:3}}>와이프 추가상환</div><input type="number" value={wf} onChange={e=>setWf(+e.target.value)} style={st} /></div>
-            </div>
-          ) : (
-            <div style={{display:'flex',gap:24,flexWrap:'wrap',marginBottom:8}}>
-              <div><div style={{fontSize:11,color:'var(--ink-4)'}}>잔여 잔액</div><div style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:700,color:'var(--warm)'}}>{fmtKRW(balance)}</div></div>
-              <div><div style={{fontSize:11,color:'var(--ink-4)'}}>월 총상환</div><div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700}}>{fmtKRW(totalMonthly)}</div><div style={{fontSize:11,color:'var(--ink-4)'}}>원리금{fmtKRW(autoAmt,{compact:true})}+추가{fmtKRW(extraAmt,{compact:true})}</div></div>
-              <div><div style={{fontSize:11,color:'var(--ink-4)'}}>예상 완납</div><div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700}}>{monthsLeft}개월 후</div></div>
-            </div>
-          )}
-          {/* 진행바 */}
-          <div style={{marginTop:8}}>
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:11.5,color:'var(--ink-3)'}}>
-              <span>상환 완료 {paidPct}%</span>
-              <span>{fmtKRW(original-balance,{compact:true})} 상환 / {fmtKRW(original,{compact:true})} 원금</span>
-            </div>
-            <div style={{height:8,background:'var(--paper-2)',borderRadius:4,overflow:'hidden'}}>
-              <div style={{height:'100%',background:'#10B981',borderRadius:4,width:paidPct+'%',transition:'width .5s'}}></div>
-            </div>
-          </div>
+    <div style={{background:'var(--paper)', border:'1px solid var(--line)', borderRadius:'var(--r-lg)', padding:'18px 22px', marginBottom:14, borderTop:'3px solid #10B981'}}>
+      {/* 헤더 */}
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14}}>
+        <div>
+          <div style={{fontSize:10.5, fontWeight:700, color:'#10B981', textTransform:'uppercase', letterSpacing:'0.1em'}}>🏠 주담대</div>
+          <div style={{fontSize:12, color:'var(--ink-3)', marginTop:2}}>{mg.bank||'농협은행'} · 금리 {rate}% · 원금 {fmtKRW(original,{compact:true})}</div>
         </div>
-        <div style={{display:'flex',gap:8,flexDirection:'column',alignItems:'flex-end'}}>
-          {editing ? (
-            <>
-              <button className="btn btn-primary btn-sm" onClick={()=>{
-                store.updateMortgage({balance:b,rate:r,autoPayment:a,extraPayment:ex,wifePayment:wf});
-                toast('주담대 정보 저장됨'); setEditing(false);
-              }}>저장</button>
-              <button className="btn btn-sm" onClick={()=>setEditing(false)}>취소</button>
-            </>
-          ) : (
-            <button className="btn btn-sm" onClick={()=>setEditing(true)}>수정</button>
-          )}
+        <button className="btn btn-sm" onClick={()=>setEditing(true)}>수정</button>
+      </div>
+
+      {/* 핵심 숫자 3칸 */}
+      <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16, marginBottom:14}}>
+        <div>
+          <div style={{fontSize:10.5, color:'var(--ink-4)', marginBottom:4}}>잔여 잔액</div>
+          <div style={{fontFamily:'var(--serif)', fontSize:24, fontWeight:400, letterSpacing:'-0.03em', color:'var(--warm)', lineHeight:1}}>{fmtKRW(balance)}</div>
+        </div>
+        <div>
+          <div style={{fontSize:10.5, color:'var(--ink-4)', marginBottom:4}}>월 총상환액</div>
+          <div style={{fontFamily:'var(--serif)', fontSize:24, fontWeight:400, letterSpacing:'-0.03em', color:'var(--ink)', lineHeight:1}}>{fmtKRW(totalMonthly)}</div>
+          <div style={{fontSize:10.5, color:'var(--ink-4)', marginTop:3}}>원리금 {fmtKRW(autoAmt,{compact:true})} + 추가 {fmtKRW(extra,{compact:true})}</div>
+        </div>
+        <div>
+          <div style={{fontSize:10.5, color:'var(--ink-4)', marginBottom:4}}>예상 완납</div>
+          <div style={{fontFamily:'var(--serif)', fontSize:24, fontWeight:400, letterSpacing:'-0.03em', color:'var(--ink)', lineHeight:1}}>{monthsLeft}개월</div>
+          <div style={{fontSize:10.5, color:'var(--ink-4)', marginTop:3}}>약 {Math.round(monthsLeft/12*10)/10}년 후</div>
+        </div>
+      </div>
+
+      {/* 진행 바 */}
+      <div>
+        <div style={{display:'flex', justifyContent:'space-between', fontSize:11.5, color:'var(--ink-3)', marginBottom:5}}>
+          <span style={{fontWeight:600, color:'#10B981'}}>상환 {paidPct.toFixed(1)}%</span>
+          <span>{fmtKRW(original-balance,{compact:true})} 완료 / {fmtKRW(original,{compact:true})} 총액</span>
+        </div>
+        <div style={{height:6, background:'var(--paper-2)', borderRadius:3, overflow:'hidden'}}>
+          <div style={{height:'100%', background:'#10B981', borderRadius:3, width:paidPct+'%', transition:'width .5s'}}></div>
         </div>
       </div>
     </div>
