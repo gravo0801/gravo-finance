@@ -896,30 +896,42 @@ function TimelinePage() {
   const mfaTL = (store.state.monthlyFixedAmounts||{})[ym]||{};
   const monthlyAPs = store.state.monthlyAutoPays||{};
   const autoPays = monthlyAPs[ym] !== undefined ? monthlyAPs[ym] : (store.state.auto_pays||[]);
-  // woori bankFlows 이체 항목 (out/var 만)
-  const wooriFlowsTL = ((store.state.bankFlows||{}).woori||[]).filter(f=>f.kind==='out'||f.kind==='var');
 
-  // 항목 색상 헬퍼
-  const getFlowColor = (desc) => {
-    const d = (desc||'').toLowerCase();
-    if (d.includes('농협')) return '#10B981';
+  // 은행 표시명 매핑
+  const BANK_LABEL = {
+    woori:'우리은행', shinhan:'신한은행', nonghyup:'농협은행',
+    kbank:'케이뱅크', ibk:'기업은행', hana:'하나은행'
+  };
+
+  // 항목 색상/마크 헬퍼
+  const getFlowColor = (desc, kind) => {
+    if (kind==='in') return '#10B981'; // 입금 = 초록
+    const d=(desc||'').toLowerCase();
+    if (d.includes('농협')) return '#059669';
     if (d.includes('신한')) return '#3B82F6';
     if (d.includes('케이')) return '#6366F1';
     if (d.includes('카드')) return '#5B6CB5';
-    if (d.includes('연금') || d.includes('isa') || d.includes('irp')) return '#EC4899';
-    if (d.includes('증권') || d.includes('투자')) return '#F59E0B';
+    if (d.includes('연금')||d.includes('isa')||d.includes('irp')) return '#EC4899';
+    if (d.includes('증권')||d.includes('투자')||d.includes('위탁')) return '#F59E0B';
     if (d.includes('하나')) return '#F59E0B';
-    if (d.includes('기업') || d.includes('ibk')) return '#8B5CF6';
+    if (d.includes('기업')||d.includes('ibk')) return '#8B5CF6';
+    if (d.includes('보험')) return '#EF4444';
+    if (d.includes('적금')) return '#0EA5E9';
     return 'var(--warm)';
   };
-  const getFlowMark = (desc) => {
-    const d = (desc||'').toLowerCase();
+  const getFlowMark = (desc, kind) => {
+    if (kind==='in') return '입금';
+    const d=(desc||'').toLowerCase();
     if (d.includes('카드')) return '카드';
     if (d.includes('연금')) return '연금';
     if (d.includes('isa')) return 'ISA';
     if (d.includes('irp')) return 'IRP';
-    if (d.includes('증권') || d.includes('투자') || d.includes('위탁')) return '투자';
+    if (d.includes('증권')||d.includes('위탁')) return '투자';
     if (d.includes('금현물')) return '금';
+    if (d.includes('보험')) return '보험';
+    if (d.includes('적금')) return '적금';
+    if (d.includes('급여')) return '급여';
+    if (d.includes('주담대')) return '주담대';
     return '이체';
   };
 
@@ -931,14 +943,15 @@ function TimelinePage() {
     store.state.fixed
       .filter(f => overridesTL[f.id]!==false && !isNonWooriTL(f))
       .forEach(f => push(f.day, {
-        kind:'fixed', label:f.name, amount: mfaTL[f.id]!==undefined?mfaTL[f.id]:f.amount,
-        id:f.id, color:'var(--warm)', mark:'고정'
+        kind:'fixed', label:f.name,
+        amount: mfaTL[f.id]!==undefined ? mfaTL[f.id] : f.amount,
+        id:f.id, color:'var(--warm)', mark:'고정', bank:''
       }));
 
     // 2. 신용카드 자동결제
     autoPays.forEach(ap => push(ap.day, {
-      kind:'autopay', label:`${ap.service} (${ap.cardCo})`, amount:ap.amount,
-      id:ap.id, color:'#8B5CF6', mark:'자동'
+      kind:'autopay', label:`${ap.service}`, subLabel:`${ap.cardCo} 자동결제`,
+      amount:ap.amount, id:ap.id, color:'#8B5CF6', mark:'자동', bank:''
     }));
 
     // 3. 카드 결제일
@@ -947,20 +960,42 @@ function TimelinePage() {
       const cardBill = (store.state.monthlyCardBills||{})[ym];
       const billAmt = cardBill?.breakdown?.[c.id] || c.used || 0;
       if (billAmt > 0) push(c.paymentDay, {
-        kind:'card', label:`${c.co} 카드 결제`, amount:billAmt,
-        id:`card-${c.id}`, color:'#5B6CB5', mark:'카드'
+        kind:'card', label:`${c.co} 카드 결제`, subLabel:'카드 결제일',
+        amount:billAmt, id:`card-${c.id}`, color:'#5B6CB5', mark:'카드', bank:''
       });
     });
 
-    // 4. 우리은행 → 각 계좌 이체 (bankFlows)
-    wooriFlowsTL.forEach(f => push(f.day, {
-      kind:'transfer', label:f.desc, amount:f.amount,
-      id:f.id, color:getFlowColor(f.desc), mark:getFlowMark(f.desc),
-      meta:f.meta
-    }));
+    // 4. 모든 은행의 모든 흐름 (in/out 모두)
+    const flows = store.state.bankFlows || {};
+    Object.entries(flows).forEach(([bankId, bankFlows]) => {
+      const bankName = BANK_LABEL[bankId] || bankId;
+      (bankFlows||[]).forEach(f => {
+        push(f.day, {
+          kind: f.kind==='in' ? 'flow-in' : 'flow-out',
+          label: f.desc,
+          subLabel: `${bankName} · ${f.meta||''}`,
+          amount: f.amount,
+          id: f.id,
+          color: getFlowColor(f.desc, f.kind),
+          mark: getFlowMark(f.desc, f.kind),
+          isIn: f.kind==='in',
+          bank: bankName
+        });
+      });
+    });
+
+    // 날짜별 정렬: 입금 먼저, 그 다음 출금 (금액 큰 순)
+    Object.keys(map).forEach(day => {
+      map[day].sort((a,b) => {
+        if (a.isIn && !b.isIn) return -1;
+        if (!a.isIn && b.isIn) return 1;
+        return b.amount - a.amount;
+      });
+    });
 
     return map;
-  },[store.state.fixed, autoPays, store.state.cards, store.state.monthlyCardBills, overridesTL, mfaTL, wooriFlowsTL]);
+  },[store.state.fixed, autoPays, store.state.cards, store.state.monthlyCardBills,
+     store.state.bankFlows, overridesTL, mfaTL]);
   const dayNames=['일','월','화','수','목','금','토'];
   const selectedEvs=selected?(eventMap[selected]||[]):[];
 
@@ -1008,27 +1043,58 @@ function TimelinePage() {
           {selected ? (
             <>
               <div className="card-head"><div className="card-title">{m}월 <em>{selected}일</em></div><button className="icon-btn" onClick={()=>setSelected(null)}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
-              {selectedEvs.length===0 ? <div style={{padding:'20px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>예정 항목 없음</div>
-              : selectedEvs.map(ev=>(
-                <div key={ev.id}>
-                  <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderBottom:'1px solid var(--line)'}}>
-                    <div style={{width:32,height:32,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',background:`${ev.color||'var(--warm)'}18`,color:ev.color||'var(--warm)',fontSize:10,fontWeight:700,flexShrink:0}}>{ev.mark||'기타'}</div>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:13.5,fontWeight:500}}>{ev.label}</div>
-                      <div style={{fontSize:11,color:'var(--ink-4)',marginTop:1}}>
-                        {ev.kind==='fixed'?'고정비':ev.kind==='autopay'?'자동결제':ev.kind==='card'?'카드결제':ev.kind==='transfer'?`이체 · ${ev.meta||''}`:'-'}
-                      </div>
-                    </div>
-                    <div style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,color:'var(--negative)',flexShrink:0}}>−{fmtKRW(ev.amount)}</div>
-                    {ev.kind==='fixed' && (
-                      <button className="icon-btn" style={{width:26,height:26}} onClick={()=>setEditId(editId===ev.id?null:ev.id)}>
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                      </button>
-                    )}
-                  </div>
-                  {editId===ev.id&&<InlineEditFixed item={store.state.fixed.find(f=>f.id===ev.id)||{id:ev.id,name:ev.label,day:selected,amount:ev.amount,meta:'',group:''}} onSave={(p)=>{store.updateFixed(ev.id,p);toast('수정됨');setEditId(null);}} onCancel={()=>setEditId(null)} />}
-                </div>
-              ))}
+              {selectedEvs.length===0
+                ? <div style={{padding:'20px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>예정 항목 없음</div>
+                : (()=>{
+                    const inTotal  = selectedEvs.filter(e=>e.isIn ).reduce((s,e)=>s+e.amount,0);
+                    const outTotal = selectedEvs.filter(e=>!e.isIn).reduce((s,e)=>s+e.amount,0);
+                    return (
+                      <>
+                        {/* 일별 소계 */}
+                        {(inTotal>0||outTotal>0) && (
+                          <div style={{display:'flex',gap:10,padding:'8px 0 12px',borderBottom:'2px solid var(--line)',marginBottom:8}}>
+                            {inTotal>0  && <div style={{flex:1,textAlign:'center'}}><div style={{fontSize:10.5,color:'#10B981',fontWeight:700,marginBottom:2}}>총 입금</div><div style={{fontFamily:'var(--serif)',fontSize:18,color:'#10B981'}}>+{fmtKRW(inTotal,{compact:true})}</div></div>}
+                            {outTotal>0 && <div style={{flex:1,textAlign:'center'}}><div style={{fontSize:10.5,color:'var(--negative)',fontWeight:700,marginBottom:2}}>총 출금</div><div style={{fontFamily:'var(--serif)',fontSize:18,color:'var(--negative)'}}>−{fmtKRW(outTotal,{compact:true})}</div></div>}
+                          </div>
+                        )}
+                        {selectedEvs.map(ev=>(
+                          <div key={ev.id}>
+                            <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderBottom:'1px solid var(--line)'}}>
+                              {/* 종류 마크 */}
+                              <div style={{
+                                width:32,height:32,borderRadius:8,flexShrink:0,
+                                display:'flex',alignItems:'center',justifyContent:'center',
+                                background:`${ev.color}1A`,color:ev.color,fontSize:10,fontWeight:700
+                              }}>{ev.mark}</div>
+                              {/* 내용 */}
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontSize:13.5,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ev.label}</div>
+                                <div style={{fontSize:11,color:'var(--ink-4)',marginTop:1}}>{ev.subLabel||ev.bank||''}</div>
+                              </div>
+                              {/* 금액 */}
+                              <div style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,flexShrink:0,
+                                color:ev.isIn?'#10B981':'var(--negative)'}}>
+                                {ev.isIn ? '+' : '−'}{fmtKRW(ev.amount)}
+                              </div>
+                              {/* 고정비만 수정 버튼 */}
+                              {ev.kind==='fixed' && (
+                                <button className="icon-btn" style={{width:26,height:26}} onClick={()=>setEditId(editId===ev.id?null:ev.id)}>
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                                </button>
+                              )}
+                            </div>
+                            {editId===ev.id && (
+                              <InlineEditFixed
+                                item={store.state.fixed.find(f=>f.id===ev.id)||{id:ev.id,name:ev.label,day:selected,amount:ev.amount,meta:'',group:''}}
+                                onSave={(p)=>{store.updateFixed(ev.id,p);toast('수정됨');setEditId(null);}}
+                                onCancel={()=>setEditId(null)} />
+                            )}
+                          </div>
+                        ))}
+                      </>
+                    );
+                  })()
+              }
             </>
           ) : (
             <>
