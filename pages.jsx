@@ -885,9 +885,17 @@ function TimelinePage() {
   const firstDow=new Date(y,m-1,1).getDay();
   const todayDay=new Date().getDate();
   const isCurMonth=y===new Date().getFullYear()&&m===new Date().getMonth()+1;
+  const NONWOORI_GROUPS_TL = ['농협은행','자동결제'];
+  const isNonWooriTL = (f) =>
+    NONWOORI_GROUPS_TL.includes(f.group) ||
+    (f.meta||'').includes('농협은행') ||
+    (f.name||'').includes('주담대');
+
   const eventMap=uSe(()=>{
     const map={};
-    store.state.fixed.forEach(f=>{if(!map[f.day])map[f.day]=[];map[f.day].push({kind:'out',label:f.name,amount:f.amount,id:f.id});});
+    store.state.fixed
+      .filter(f => !isNonWooriTL(f))  // 농협/자동결제/주담대 제외
+      .forEach(f=>{if(!map[f.day])map[f.day]=[];map[f.day].push({kind:'out',label:f.name,amount:f.amount,id:f.id});});
     return map;
   },[store.state.fixed]);
   const dayNames=['일','월','화','수','목','금','토'];
