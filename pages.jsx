@@ -1269,19 +1269,25 @@ function AnalyticsPage() {
         mortgage: store.state.mortgage,
         topCategories: Object.entries(catTotals).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${k}:${fmtKRW(v)}`).join(', '),
       };
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          model:'claude-sonnet-4-20250514',
-          max_tokens:1000,
-          messages:[{role:'user', content:`당신은 재정 전문가입니다. 아래 재정 데이터를 분석하고 한국어로 간결하게 (3~4개 포인트) 조언해주세요.\n\n${JSON.stringify(summary, null, 2)}\n\n분석 내용:\n1. 마이너스통장 청산 전략\n2. 소비 패턴의 개선점\n3. 주담대 상환과 마이너스 관리 우선순위\n4. 이달 주의할 점\n\n마크다운 없이 평문으로 작성하세요.`}]
-        })
+
+      const prompt = `당신은 재정 전문가입니다. 아래 재정 데이터를 분석하고 한국어로 간결하게 (3~4개 포인트) 조언해주세요.\n\n${JSON.stringify(summary, null, 2)}\n\n분석 내용:\n1. 마이너스통장 청산 전략\n2. 소비 패턴의 개선점\n3. 주담대 상환과 마이너스 관리 우선순위\n4. 이달 주의할 점\n\n마크다운 없이 평문으로 작성하세요.`;
+
+      // Vercel 서버리스 프록시 사용 (CORS 우회)
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
       });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `서버 오류 (${res.status})`);
+      }
+
       const data = await res.json();
       setAiResult(data.content?.[0]?.text || '분석 결과를 가져올 수 없습니다.');
     } catch(e) {
-      setAiResult('AI 분석 중 오류가 발생했습니다: ' + e.message);
+      setAiResult('❌ AI 분석 오류: ' + e.message + '\n\n⚙️ 설정 확인: Vercel 대시보드 → 프로젝트 → Settings → Environment Variables → ANTHROPIC_API_KEY 추가 필요');
     }
     setAiLoading(false);
   };
