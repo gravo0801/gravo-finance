@@ -891,13 +891,44 @@ function TimelinePage() {
     (f.meta||'').includes('농협은행') ||
     (f.name||'').includes('주담대');
 
+  const ym = `${y}-${String(m).padStart(2,'0')}`;
+  const overridesTL = (store.state.fixedOverrides||{})[ym]||{};
+  const mfaTL = (store.state.monthlyFixedAmounts||{})[ym]||{};
+  // 월별 자동결제 (독립 데이터 우선, 없으면 global)
+  const monthlyAPs = store.state.monthlyAutoPays||{};
+  const autoPays = monthlyAPs[ym] !== undefined ? monthlyAPs[ym] : (store.state.auto_pays||[]);
+
   const eventMap=uSe(()=>{
     const map={};
+    const push=(day,item)=>{ if(!map[day])map[day]=[]; map[day].push(item); };
+
+    // 1. 우리은행 관련 고정비 (계좌간 이체 제외)
     store.state.fixed
-      .filter(f => !isNonWooriTL(f))  // 농협/자동결제/주담대 제외
-      .forEach(f=>{if(!map[f.day])map[f.day]=[];map[f.day].push({kind:'out',label:f.name,amount:f.amount,id:f.id});});
+      .filter(f => overridesTL[f.id]!==false && !isNonWooriTL(f))
+      .forEach(f => push(f.day, {
+        kind:'fixed', label:f.name, amount: mfaTL[f.id]!==undefined?mfaTL[f.id]:f.amount,
+        id:f.id, color:'var(--warm)', mark:'고정'
+      }));
+
+    // 2. 신용카드 자동결제
+    autoPays.forEach(ap => push(ap.day, {
+      kind:'autopay', label:`${ap.service} (${ap.cardCo})`, amount:ap.amount,
+      id:ap.id, color:'#8B5CF6', mark:'자동'
+    }));
+
+    // 3. 카드 결제일
+    store.state.cards.forEach(c => {
+      if (!c.paymentDay) return;
+      const cardBill = (store.state.monthlyCardBills||{})[ym];
+      const billAmt = cardBill?.breakdown?.[c.id] || c.used || 0;
+      if (billAmt > 0) push(c.paymentDay, {
+        kind:'card', label:`${c.co} 카드 결제`, amount:billAmt,
+        id:`card-${c.id}`, color:'#5B6CB5', mark:'카드'
+      });
+    });
+
     return map;
-  },[store.state.fixed]);
+  },[store.state.fixed, autoPays, store.state.cards, store.state.monthlyCardBills, overridesTL, mfaTL]);
   const dayNames=['일','월','화','수','목','금','토'];
   const selectedEvs=selected?(eventMap[selected]||[]):[];
 
@@ -928,7 +959,13 @@ function TimelinePage() {
                   onMouseLeave={()=>setHovered(null)}
                 >
                   <span style={{fontSize:12,fontWeight:isToday||hasEv?700:400,color:isSel?'#fff':isToday?'#854D0E':hasEv?'var(--ink)':'var(--ink-3)'}}>{d}</span>
-                  {hasEv&&<div style={{width:4,height:4,borderRadius:'50%',background:isSel?'rgba(255,255,255,0.8)':'var(--negative)'}}></div>}
+                  {hasEv&&(
+                    <div style={{display:'flex',gap:2,marginTop:1}}>
+                      {(eventMap[d]||[]).slice(0,3).map((ev,i)=>(
+                        <div key={i} style={{width:4,height:4,borderRadius:'50%',background:isSel?'rgba(255,255,255,0.8)':(ev.color||'var(--negative)')}}></div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -943,12 +980,19 @@ function TimelinePage() {
               : selectedEvs.map(ev=>(
                 <div key={ev.id}>
                   <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderBottom:'1px solid var(--line)'}}>
-                    <div className="day-chip out" style={{width:30,height:30,fontSize:11}}>{selected}</div>
-                    <div style={{flex:1,fontSize:13.5,fontWeight:500}}>{ev.label}</div>
-                    <div className="mono fw6 neg text-sm">−{fmtKRW(ev.amount)}</div>
-                    <button className="icon-btn" style={{width:26,height:26}} onClick={()=>setEditId(editId===ev.id?null:ev.id)}>
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
-                    </button>
+                    <div style={{width:32,height:32,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',background:`${ev.color||'var(--warm)'}18`,color:ev.color||'var(--warm)',fontSize:10,fontWeight:700,flexShrink:0}}>{ev.mark||'고정'}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13.5,fontWeight:500}}>{ev.label}</div>
+                      <div style={{fontSize:11,color:'var(--ink-4)',marginTop:1}}>
+                        {ev.kind==='fixed'?'고정비':ev.kind==='autopay'?'자동결제':ev.kind==='card'?'카드결제일':'기타'}
+                      </div>
+                    </div>
+                    <div style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,color:'var(--negative)'}}>−{fmtKRW(ev.amount)}</div>
+                    {ev.kind==='fixed' && (
+                      <button className="icon-btn" style={{width:26,height:26}} onClick={()=>setEditId(editId===ev.id?null:ev.id)}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                      </button>
+                    )}
                   </div>
                   {editId===ev.id&&<InlineEditFixed item={store.state.fixed.find(f=>f.id===ev.id)||{id:ev.id,name:ev.label,day:selected,amount:ev.amount,meta:'',group:''}} onSave={(p)=>{store.updateFixed(ev.id,p);toast('수정됨');setEditId(null);}} onCancel={()=>setEditId(null)} />}
                 </div>

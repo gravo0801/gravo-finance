@@ -88,7 +88,7 @@ function Topbar({ active, setDrawerOpen, openSearch, openNotif, openSettings, th
             <span style={{fontSize:11, fontWeight:600, color:syncBadge.color, whiteSpace:'nowrap'}}>{syncBadge.label}</span>
           </div>
         )}
-        <div className="date-pill">{new Date().toLocaleDateString("ko-KR",{year:"2-digit",month:"2-digit",day:"2-digit"}).replace(/\. /g,".").replace(".","")}.</div>
+        <div className="date-pill">{(()=>{const n=new Date();const days=['일','월','화','수','목','금','토'];return `${n.getMonth()+1}/${n.getDate()} (${days[n.getDay()]})`;})()} </div>
         <button className="icon-btn" title="검색 (⌘K)" onClick={openSearch}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         </button>
