@@ -894,15 +894,40 @@ function TimelinePage() {
   const ym = `${y}-${String(m).padStart(2,'0')}`;
   const overridesTL = (store.state.fixedOverrides||{})[ym]||{};
   const mfaTL = (store.state.monthlyFixedAmounts||{})[ym]||{};
-  // 월별 자동결제 (독립 데이터 우선, 없으면 global)
   const monthlyAPs = store.state.monthlyAutoPays||{};
   const autoPays = monthlyAPs[ym] !== undefined ? monthlyAPs[ym] : (store.state.auto_pays||[]);
+  // woori bankFlows 이체 항목 (out/var 만)
+  const wooriFlowsTL = ((store.state.bankFlows||{}).woori||[]).filter(f=>f.kind==='out'||f.kind==='var');
+
+  // 항목 색상 헬퍼
+  const getFlowColor = (desc) => {
+    const d = (desc||'').toLowerCase();
+    if (d.includes('농협')) return '#10B981';
+    if (d.includes('신한')) return '#3B82F6';
+    if (d.includes('케이')) return '#6366F1';
+    if (d.includes('카드')) return '#5B6CB5';
+    if (d.includes('연금') || d.includes('isa') || d.includes('irp')) return '#EC4899';
+    if (d.includes('증권') || d.includes('투자')) return '#F59E0B';
+    if (d.includes('하나')) return '#F59E0B';
+    if (d.includes('기업') || d.includes('ibk')) return '#8B5CF6';
+    return 'var(--warm)';
+  };
+  const getFlowMark = (desc) => {
+    const d = (desc||'').toLowerCase();
+    if (d.includes('카드')) return '카드';
+    if (d.includes('연금')) return '연금';
+    if (d.includes('isa')) return 'ISA';
+    if (d.includes('irp')) return 'IRP';
+    if (d.includes('증권') || d.includes('투자') || d.includes('위탁')) return '투자';
+    if (d.includes('금현물')) return '금';
+    return '이체';
+  };
 
   const eventMap=uSe(()=>{
     const map={};
     const push=(day,item)=>{ if(!map[day])map[day]=[]; map[day].push(item); };
 
-    // 1. 우리은행 관련 고정비 (계좌간 이체 제외)
+    // 1. 우리은행 관련 고정비
     store.state.fixed
       .filter(f => overridesTL[f.id]!==false && !isNonWooriTL(f))
       .forEach(f => push(f.day, {
@@ -927,8 +952,15 @@ function TimelinePage() {
       });
     });
 
+    // 4. 우리은행 → 각 계좌 이체 (bankFlows)
+    wooriFlowsTL.forEach(f => push(f.day, {
+      kind:'transfer', label:f.desc, amount:f.amount,
+      id:f.id, color:getFlowColor(f.desc), mark:getFlowMark(f.desc),
+      meta:f.meta
+    }));
+
     return map;
-  },[store.state.fixed, autoPays, store.state.cards, store.state.monthlyCardBills, overridesTL, mfaTL]);
+  },[store.state.fixed, autoPays, store.state.cards, store.state.monthlyCardBills, overridesTL, mfaTL, wooriFlowsTL]);
   const dayNames=['일','월','화','수','목','금','토'];
   const selectedEvs=selected?(eventMap[selected]||[]):[];
 
@@ -980,14 +1012,14 @@ function TimelinePage() {
               : selectedEvs.map(ev=>(
                 <div key={ev.id}>
                   <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderBottom:'1px solid var(--line)'}}>
-                    <div style={{width:32,height:32,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',background:`${ev.color||'var(--warm)'}18`,color:ev.color||'var(--warm)',fontSize:10,fontWeight:700,flexShrink:0}}>{ev.mark||'고정'}</div>
+                    <div style={{width:32,height:32,borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',background:`${ev.color||'var(--warm)'}18`,color:ev.color||'var(--warm)',fontSize:10,fontWeight:700,flexShrink:0}}>{ev.mark||'기타'}</div>
                     <div style={{flex:1}}>
                       <div style={{fontSize:13.5,fontWeight:500}}>{ev.label}</div>
                       <div style={{fontSize:11,color:'var(--ink-4)',marginTop:1}}>
-                        {ev.kind==='fixed'?'고정비':ev.kind==='autopay'?'자동결제':ev.kind==='card'?'카드결제일':'기타'}
+                        {ev.kind==='fixed'?'고정비':ev.kind==='autopay'?'자동결제':ev.kind==='card'?'카드결제':ev.kind==='transfer'?`이체 · ${ev.meta||''}`:'-'}
                       </div>
                     </div>
-                    <div style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,color:'var(--negative)'}}>−{fmtKRW(ev.amount)}</div>
+                    <div style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,color:'var(--negative)',flexShrink:0}}>−{fmtKRW(ev.amount)}</div>
                     {ev.kind==='fixed' && (
                       <button className="icon-btn" style={{width:26,height:26}} onClick={()=>setEditId(editId===ev.id?null:ev.id)}>
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>

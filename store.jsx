@@ -79,12 +79,22 @@ const SEED = {
   // 통장별 자금흐름 (per-bank flows)
   bankFlows: {
     woori:    [
-      {id:'wf1', day:10, kind:'out', desc:'하나은행 이체',    meta:'이벤트자금',   amount:500000},
-      {id:'wf2', day:10, kind:'out', desc:'기업은행 이체',    meta:'세금대비',     amount:500000},
-      {id:'wf3', day:14, kind:'out', desc:'카드 결제',        meta:'롯데·농협·신한', amount:620000},
-      {id:'wf4', day:25, kind:'out', desc:'신한은행 이체',    meta:'FNA 주거래',   amount:500000},
-      {id:'wf5', day:27, kind:'out', desc:'농협은행 이체',    meta:'주담대 재원',  amount:2500000},
-      {id:'wf6', day:30, kind:'out', desc:'와이프 계좌 이체', meta:'생활비',       amount:1000000},
+      {id:'wf1',  day:10, kind:'out', desc:'하나은행',               meta:'이벤트자금',        amount:500000},
+      {id:'wf2',  day:10, kind:'out', desc:'기업은행',               meta:'세금대비',          amount:500000},
+      {id:'wf3',  day:14, kind:'out', desc:'카드 결제',              meta:'롯데·농협·신한',    amount:620000},
+      {id:'wf4',  day:25, kind:'out', desc:'신한FNA',                meta:'주거래',            amount:500000},
+      {id:'wf5',  day:25, kind:'out', desc:'신한(저축)',             meta:'저축',              amount:200000},
+      {id:'wf6',  day:27, kind:'out', desc:'농협은행',               meta:'주담대 재원',       amount:2500000},
+      {id:'wf7',  day:30, kind:'out', desc:'케이뱅크',               meta:'이체',              amount:200000},
+      {id:'wf8',  day:30, kind:'out', desc:'신한금융투자(ISA)',       meta:'ISA 납입',          amount:200000},
+      {id:'wf9',  day:30, kind:'out', desc:'신한금융투자(연금저축1)', meta:'연금저축',          amount:300000},
+      {id:'wf10', day:30, kind:'out', desc:'미래에셋증권(연금저축2)', meta:'연금저축',          amount:300000},
+      {id:'wf11', day:30, kind:'out', desc:'미래에셋증권(금현물)',    meta:'금현물',            amount:100000},
+      {id:'wf12', day:30, kind:'out', desc:'미래에셋증권(IRP)',       meta:'IRP 납입',          amount:300000},
+      {id:'wf13', day:30, kind:'out', desc:'키움증권(위탁종합)',      meta:'투자',              amount:200000},
+      {id:'wf14', day:30, kind:'out', desc:'토스증권(위탁종합)',      meta:'투자',              amount:100000},
+      {id:'wf15', day:30, kind:'out', desc:'메리츠증권(위탁종합)',    meta:'투자',              amount:100000},
+      {id:'wf16', day:30, kind:'out', desc:'신한금융투자(위탁종합)',  meta:'투자',              amount:100000},
     ],
     shinhan:  [
       {id:'sf1', day:10, kind:'out', desc:'케이뱅크 이체',    meta:'적금',         amount:500000},
