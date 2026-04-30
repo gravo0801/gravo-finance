@@ -83,19 +83,29 @@ function AddExpenseModal({ open, onClose }) {
   const [f, setF] = mS({ date: today, title: '', amount: '', cat: '식비', card: '롯데카드' });
   React.useEffect(() => { if (open) setF({ date: today, title: '', amount: '', cat: '식비', card: '롯데카드' }); }, [open]);
 
-  const cats = [
-    { value:'식비', label:'식비', tone:'indigo', mark:'식' },
-    { value:'카페', label:'카페', tone:'warm', mark:'커' },
-    { value:'생활', label:'생활', tone:'pos', mark:'생' },
-    { value:'문화', label:'문화', tone:'accent', mark:'문' },
-    { value:'교통', label:'교통', tone:'neg', mark:'교' },
-    { value:'기타', label:'기타', tone:'indigo', mark:'기' },
+  // CAT_DEFS와 동일한 카테고리 목록 사용
+  const cats = window.CAT_DEFS || [
+    {cat:'식사',mark:'식',tone:'indigo'},{cat:'카페',mark:'카',tone:'warm'},
+    {cat:'배달',mark:'배',tone:'warm'},{cat:'쇼핑',mark:'쇼',tone:'accent'},
+    {cat:'마트',mark:'마',tone:'pos'},{cat:'교통',mark:'교',tone:'neg'},
+    {cat:'의료',mark:'의',tone:'pos'},{cat:'건강',mark:'건',tone:'pos'},
+    {cat:'여행',mark:'여',tone:'accent'},{cat:'문화',mark:'문',tone:'accent'},
+    {cat:'교육',mark:'공',tone:'indigo'},{cat:'육아',mark:'육',tone:'pos'},
+    {cat:'구독',mark:'구',tone:'indigo'},{cat:'통신',mark:'통',tone:'indigo'},
+    {cat:'보험',mark:'보',tone:'neg'},{cat:'경조사',mark:'경',tone:'accent'},
+    {cat:'기타',mark:'기',tone:'warm'},
+  ];
+  const catOptions = cats.map(c => ({value: c.cat||c.value, label: c.label || (c.cat||c.value)}));
+
+  const cardOptions = [
+    {value:'현금', label:'💵 현금'},
+    ...store.state.cards.map(c => ({value: c.name, label: `${c.co} — ${c.name}`}))
   ];
 
   const submit = () => {
     if (!f.title || !f.amount) { toast('제목과 금액을 입력하세요'); return; }
-    const cat = cats.find(c => c.value === f.cat);
-    store.addExpense({ date: f.date, title: f.title, amount: Number(f.amount), cat: f.cat, card: f.card, tone: cat.tone, mark: cat.mark });
+    const catDef = cats.find(c => (c.cat||c.value) === f.cat) || cats[cats.length-1];
+    store.addExpense({ date: f.date, title: f.title, amount: Number(f.amount), cat: f.cat, card: f.card, tone: catDef.tone, mark: catDef.mark });
     toast('소비 내역이 추가되었어요');
     onClose();
   };
@@ -118,10 +128,10 @@ function AddExpenseModal({ open, onClose }) {
       </Field>
       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
         <Field label="카테고리">
-          <Select value={f.cat} onChange={v => setF({...f, cat: v})} options={cats.map(c => ({value:c.value, label:c.label}))} />
+          <Select value={f.cat} onChange={v => setF({...f, cat: v})} options={catOptions} />
         </Field>
         <Field label="결제 카드">
-          <Select value={f.card} onChange={v => setF({...f, card: v})} options={store.state.cards.map(c => ({value:c.co, label:c.co}))} />
+          <Select value={f.card} onChange={v => setF({...f, card: v})} options={cardOptions} />
         </Field>
       </div>
     </Modal>

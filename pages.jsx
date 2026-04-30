@@ -6,7 +6,10 @@ function useMonthExpenses() {
   const store = useStore();
   const { y, m } = store.state.month;
   const ym = `${y}-${String(m).padStart(2,'0')}`;
-  return uSe(() => store.state.expenses.filter(e => e.date.startsWith(ym)), [store.state.expenses, ym]);
+  return uSe(() => store.state.expenses.filter(e =>
+    e.date.startsWith(ym) &&
+    !EXCLUDE_FROM_EXPENSE.includes(e.cat)
+  ), [store.state.expenses, ym]);
 }
 
 function MonthSwitchLive() {
@@ -48,6 +51,8 @@ const CAT_DEFS = [
   {cat:'경조사',mark:'경', tone:'accent', label:'🎁 경조사·선물'},
   {cat:'기타',  mark:'기', tone:'warm',   label:'📦 기타'},
 ];
+// 소비내역 통계에서 제외할 카테고리 (통장 간 이동은 소비 아님)
+const EXCLUDE_FROM_EXPENSE = ['이체','계좌이동','통장이체'];
 function getCatDef(cat){ return CAT_DEFS.find(c=>c.cat===cat)||CAT_DEFS[CAT_DEFS.length-1]; }
 
 // ─────────────────────────────────────────────────────────
@@ -984,7 +989,7 @@ function ExpensesPage({ openExpense }) {
   const filtered=uSe(()=>{
     let l=[...monthExp];
     if(filter!=='all')l=l.filter(e=>e.cat===filter);
-    if(cardFilter!=='all')l=l.filter(e=>e.card===cardFilter);
+    if(cardFilter!=='all') l=l.filter(e=> e.card===cardFilter || e.card.includes(cardFilter) || (store.state.cards.find(c=>c.name===cardFilter)?.co && e.card.includes(store.state.cards.find(c=>c.name===cardFilter).co)));
     if(search)l=l.filter(e=>(e.title+e.cat+e.card).toLowerCase().includes(search.toLowerCase()));
     if(sortBy==='amount')l.sort((a,b)=>b.amount-a.amount);
     else if(sortBy==='amount-asc')l.sort((a,b)=>a.amount-b.amount);
@@ -995,7 +1000,7 @@ function ExpensesPage({ openExpense }) {
   const byDate=uSe(()=>{ const m={}; if(sortBy==='date')filtered.forEach(e=>{if(!m[e.date])m[e.date]=[];m[e.date].push(e);}); return m; },[filtered,sortBy]);
   const dates=Object.keys(byDate).sort().reverse();
   const toneMap={accent:'var(--accent)',indigo:'#5B6CB5',warm:'var(--warm)',pos:'var(--positive)',neg:'var(--negative)'};
-  const cardOpts=[{value:'all',label:'모든 카드'},...store.state.cards.map(c=>({value:c.co,label:c.co}))];
+  const cardOpts=[{value:'all',label:'모든 카드'},...store.state.cards.map(c=>({value:c.name,label:`${c.co} — ${c.name}`}))];
   const dayNames=['일','월','화','수','목','금','토'];
 
   return (

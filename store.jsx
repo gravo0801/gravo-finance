@@ -5,7 +5,7 @@ const FB_PROJ_LS     = 'gf_fb_projid';
 const FB_CODE_LS     = 'gf_fb_synccode';
 
 const SEED = {
-  month: { y: 2026, m: 4 },
+  month: { y: new Date().getFullYear(), m: new Date().getMonth()+1 },
   income: 4200000,
   accounts: [
     { id: 'woori',    name: '우리은행',  sub: '마이너스통장', balance: -49200000, limit: 150000000, kind: 'credit-line', flowIn: 4200000, flowOut: 2800000 },
@@ -118,7 +118,12 @@ const SEED = {
 function loadStore() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (raw) return { ...SEED, ...JSON.parse(raw) };
+    if (raw) {
+      const saved = JSON.parse(raw);
+      const now = new Date();
+      // month는 항상 오늘 기준으로 초기화 (저장된 과거 값 무시)
+      return { ...SEED, ...saved, month: { y: now.getFullYear(), m: now.getMonth()+1 } };
+    }
   } catch(e) {}
   return SEED;
 }
