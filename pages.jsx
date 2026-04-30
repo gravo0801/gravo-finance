@@ -1270,7 +1270,9 @@ function AnalyticsPage() {
         topCategories: Object.entries(catTotals).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>`${k}:${fmtKRW(v)}`).join(', '),
       };
 
-      const prompt = `당신은 재정 전문가입니다. 아래 재정 데이터를 분석하고 한국어로 간결하게 (3~4개 포인트) 조언해주세요.\n\n${JSON.stringify(summary, null, 2)}\n\n분석 내용:\n1. 마이너스통장 청산 전략\n2. 소비 패턴의 개선점\n3. 주담대 상환과 마이너스 관리 우선순위\n4. 이달 주의할 점\n\n마크다운 없이 평문으로 작성하세요.`;
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일`;
+      const prompt = `당신은 재정 전문가입니다. 오늘 날짜는 ${dateStr}입니다. 아래 재정 데이터를 분석하고 한국어로 간결하게 (3~4개 포인트) 조언해주세요.\n\n${JSON.stringify(summary, null, 2)}\n\n분석 내용:\n1. 마이너스통장 청산 전략\n2. 소비 패턴의 개선점\n3. 주담대 상환과 마이너스 관리 우선순위\n4. ${now.getMonth()+1}월 이달 주의할 점 (현재 날짜 기준으로 작성)\n\n마크다운 없이 평문으로 작성하세요.`;
 
       // Vercel 서버리스 프록시 사용 (CORS 우회)
       const res = await fetch('/api/analyze', {
