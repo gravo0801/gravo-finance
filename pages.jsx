@@ -948,11 +948,11 @@ function TimelinePage() {
     const map={};
     const push=(day,item)=>{ if(!map[day])map[day]=[]; map[day].push(item); };
 
-    // 1. 급여 입금 (fix2: 항상 isIn=true)
+    // 1. 급여 입금 (editable:true로 수정 가능)
     push(salaryDay, {
       kind:'salary', label:'급여 입금', subLabel:`매월 ${salaryDay}일 (주말 시 직전 금요일)`,
       amount:salaryAmt, id:'salary', color:'#10B981', mark:'급여',
-      isIn:true, bank:'', editable:false
+      isIn:true, bank:'', editable:true
     });
 
     // 2. 우리은행 고정비 — fix4: overrides false면 제외
@@ -1099,7 +1099,7 @@ function TimelinePage() {
           </div>
         </div>
 
-        {/* 우측: 선택된 날짜 상세 + 수정/삭제/추가 */}
+        {/* 우측: 날짜별 상세 또는 이달 전체 목록 */}
         <div className="card" style={{minHeight:200}}>
           {selected ? (
             <TimelinePanel
@@ -1108,19 +1108,27 @@ function TimelinePage() {
               editId={editId} setEditId={setEditId}
               ym={ym} />
           ) : (
-            <>
-              <div className="card-head"><div className="card-title">날짜를 <em>선택하세요</em></div></div>
-              <div style={{padding:'20px 0',textAlign:'center',color:'var(--ink-4)',fontSize:13}}>📅 날짜를 클릭하면 상세 내역을 확인하고 수정할 수 있습니다</div>
-            </>
+            <MonthEventList
+              eventMap={eventMap} month={m}
+              store={store} toast={toast}
+              editId={editId} setEditId={setEditId}
+              ym={ym} onSelectDay={setSelected} />
           )}
         </div>
       </div>
 
       {hovered&&eventMap[hovered]&&(
-        <div style={{position:'fixed',left:ttPos.x,top:ttPos.y,transform:'translateX(-50%)',background:'var(--ink)',color:'var(--bg)',padding:'10px 14px',borderRadius:10,fontSize:12.5,zIndex:999,pointerEvents:'none',maxWidth:260,boxShadow:'0 4px 20px rgba(0,0,0,.2)',lineHeight:1.7}}>
+        <div style={{position:'fixed',left:ttPos.x,top:ttPos.y,transform:'translateX(-50%)',background:'var(--ink)',color:'var(--bg)',padding:'10px 14px',borderRadius:10,fontSize:12.5,zIndex:999,pointerEvents:'none',maxWidth:280,boxShadow:'0 4px 20px rgba(0,0,0,.2)',lineHeight:1.8}}>
           <div style={{fontWeight:700,marginBottom:4}}>{m}월 {hovered}일</div>
           {(eventMap[hovered]||[]).map((e,i)=>(
-            <div key={i} style={{display:'flex',justifyContent:'space-between',gap:14}}><span>{e.label}</span><span style={{fontFamily:'var(--mono)',fontWeight:600}}>−{fmtKRW(e.amount)}</span></div>
+            <div key={i} style={{display:'flex',justifyContent:'space-between',gap:14}}>
+              <span>{e.label}</span>
+              <span style={{fontFamily:'var(--mono)',fontWeight:600,color:e.isIn?'#4ade80':'#fca5a5'}}>
+                {e.kind==='transfer-pair'
+                  ? `−/+${fmtKRW(e.amount)}`
+                  : `${e.isIn?'+':'−'}${fmtKRW(e.amount)}`}
+              </span>
+            </div>
           ))}
         </div>
       )}
@@ -1527,9 +1535,129 @@ function AnalyticsPage() {
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// TIMELINE PANEL — 날짜별 상세 수정/삭제/추가
-// ─────────────────────────────────────────────────────────
+// ── 이달 전체 사건 목록 (우측 패널 기본 상태) ──────────────
+function MonthEventList({ eventMap, month, store, toast, editId, setEditId, ym, onSelectDay }) {
+  const allDays = Object.keys(eventMap).map(Number).sort((a,b)=>a-b);
+  const total = allDays.reduce((s,d)=>(eventMap[d]||[]).reduce((ss,e)=>ss+(e.isIn?0:e.amount),s),0);
+  const totalIn = allDays.reduce((s,d)=>(eventMap[d]||[]).reduce((ss,e)=>ss+(e.isIn?e.amount:0),s),0);
+
+  return (
+    <>
+      <div className="card-head">
+        <div><div className="card-title">{month}월 <em>전체 일정</em></div>
+          <div style={{fontSize:11.5,color:'var(--ink-4)',marginTop:2}}>
+            입금 <span style={{color:'#10B981',fontWeight:600}}>+{fmtKRW(totalIn,{compact:true})}</span> ·
+            출금 <span style={{color:'var(--negative)',fontWeight:600}}>−{fmtKRW(total,{compact:true})}</span>
+          </div>
+        </div>
+      </div>
+      <div style={{maxHeight:600,overflowY:'auto'}}>
+        {allDays.map(day=>(
+          <div key={day}>
+            {/* 날짜 헤더 — 클릭하면 해당 날짜 선택 */}
+            <div onClick={()=>onSelectDay(day)}
+              style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0 4px',cursor:'pointer',
+                borderTop:'1px solid var(--line)',marginTop:4}}>
+              <div className="day-chip" style={{width:26,height:26,fontSize:11,background:'var(--accent)',color:'#fff',borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,flexShrink:0}}>{day}</div>
+              <div style={{fontSize:11.5,color:'var(--ink-3)',fontWeight:600}}>{month}월 {day}일</div>
+            </div>
+            {(eventMap[day]||[]).map(ev=>(
+              <MonthEventRow key={ev.id} ev={ev} day={day} ym={ym} store={store} toast={toast}
+                editId={editId} setEditId={setEditId} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ── 이달 목록의 개별 항목 행 ────────────────────────────────
+function MonthEventRow({ ev, day, ym, store, toast, editId, setEditId }) {
+  const handleDelete = () => {
+    if (ev.kind==='fixed')    { store.deleteFixed(ev.id); toast('삭제됨'); }
+    else if (ev.kind==='autopay') { store.deleteMonthAutoPay(ym, ev.id); toast('삭제됨'); }
+    else if (ev.kind==='transfer-pair') {
+      store.deleteBankFlow(ev.bankId, ev.id);
+      if (ev.pairedBankId) store.deleteBankFlow(ev.pairedBankId, ev.pairedId);
+      toast('이체 삭제됨');
+    }
+    else if (ev.bankId) { store.deleteBankFlow(ev.bankId, ev.id); toast('삭제됨'); }
+    else if (ev.kind==='salary') { toast('급여는 설정에서 월별로 수정하세요'); }
+  };
+  const canEdit = ev.editable && (ev.bankId || ev.kind==='fixed' || ev.kind==='transfer-pair' || ev.kind==='salary');
+  const canDel  = ev.editable && ev.kind !== 'salary' && ev.kind !== 'card';
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',gap:7,padding:'6px 0 6px 34px'}}>
+        <div style={{width:28,height:28,borderRadius:7,flexShrink:0,display:'flex',alignItems:'center',
+          justifyContent:'center',background:`${ev.color}18`,color:ev.color,fontSize:10,fontWeight:700}}>
+          {ev.mark}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          {ev.kind==='transfer-pair'
+            ? <div style={{fontSize:12.5,fontWeight:500,display:'flex',gap:4,flexWrap:'wrap',alignItems:'center'}}>
+                <span style={{color:'var(--negative)'}}>−{fmtKRW(ev.amount,{compact:true})}</span>
+                <span style={{color:'var(--ink-4)',fontSize:11}}>{ev.label.split('→')[0]?.trim()}</span>
+                <span style={{color:'var(--ink-3)'}}>→</span>
+                <span style={{color:'#10B981'}}>+{fmtKRW(ev.amount,{compact:true})}</span>
+                <span style={{color:'var(--ink-4)',fontSize:11}}>{ev.label.split('→')[1]?.trim()}</span>
+              </div>
+            : <div style={{fontSize:12.5,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ev.label}</div>
+          }
+        </div>
+        {ev.kind!=='transfer-pair' && (
+          <div style={{fontFamily:'var(--mono)',fontSize:12.5,fontWeight:700,flexShrink:0,
+            color:ev.isIn?'#10B981':'var(--negative)'}}>
+            {ev.isIn?'+':'−'}{fmtKRW(ev.amount,{compact:true})}
+          </div>
+        )}
+        {canEdit && (
+          <button className="icon-btn" style={{width:24,height:24}} onClick={()=>setEditId(editId===ev.id?null:ev.id)}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+          </button>
+        )}
+        {canDel && (
+          <button className="icon-btn" style={{width:24,height:24}} onClick={handleDelete}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+          </button>
+        )}
+      </div>
+      {editId===ev.id && ev.kind==='salary' && (
+        <SalaryEditRow ym={ym} current={ev.amount} store={store} toast={toast} onClose={()=>setEditId(null)} />
+      )}
+      {editId===ev.id && ev.kind==='fixed' && (
+        <InlineEditFixed
+          item={store.state.fixed.find(f=>f.id===ev.id)||{id:ev.id,name:ev.label,day,amount:ev.amount,meta:'',group:''}}
+          onSave={(p)=>{store.updateFixed(ev.id,p);toast('수정됨');setEditId(null);}}
+          onCancel={()=>setEditId(null)} />
+      )}
+      {editId===ev.id && (ev.bankId||ev.kind==='transfer-pair') && (
+        <FlowEditRow ev={ev} store={store} toast={toast} onClose={()=>setEditId(null)} />
+      )}
+    </div>
+  );
+}
+
+// ── 급여 수정 폼 ─────────────────────────────────────────
+function SalaryEditRow({ ym, current, store, toast, onClose }) {
+  const [amt, setAmt] = uS(current);
+  const st = {padding:'7px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:13,background:'var(--bg)',fontFamily:'var(--mono)',width:'100%'};
+  return (
+    <div style={{padding:'10px 12px',background:'color-mix(in oklab,#10B981 8%,var(--paper))',borderRadius:'var(--r-sm)',margin:'4px 0 4px 34px',border:'1px solid #10B98130'}}>
+      <div style={{fontSize:11,fontWeight:700,color:'#10B981',marginBottom:8}}>급여 수정 ({ym.split('-')[1]}월)</div>
+      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+        <input type="number" value={amt} onChange={e=>setAmt(+e.target.value)} style={st} />
+        <button className="btn btn-primary btn-sm" onClick={()=>{
+          store.setSalaryForMonth(ym, +amt);
+          toast('급여 저장됨'); onClose();
+        }}>저장</button>
+        <button className="btn btn-sm" onClick={onClose}>취소</button>
+      </div>
+    </div>
+  );
+}
 function TimelinePanel({ day, month, evs, store, toast, editId, setEditId, ym }) {
   const [adding, setAdding] = uS(false);
   const [newFlow, setNewFlow] = uS({ bankId:'woori', desc:'', meta:'', amount:'', kind:'out' });
@@ -1670,6 +1798,9 @@ function TimelinePanel({ day, month, evs, store, toast, editId, setEditId, ym })
               </button>
             )}
           </div>
+          {editId===ev.id && ev.kind==='salary' && (
+            <SalaryEditRow ym={ym} current={ev.amount} store={store} toast={toast} onClose={()=>setEditId(null)} />
+          )}
           {editId===ev.id && ev.kind==='fixed' && (
             <InlineEditFixed
               item={store.state.fixed.find(f=>f.id===ev.id)||{id:ev.id,name:ev.label,day,amount:ev.amount,meta:'',group:''}}
