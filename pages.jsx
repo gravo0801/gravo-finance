@@ -155,7 +155,7 @@ function DashboardPage({ openExpense, openCard }) {
       {/* 주담대 현황 */}
       <MortgageBox store={store} toast={toast} />
 
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14,marginBottom:20}}>
+      <div className="mobile-4box" style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14,marginBottom:20}}>
 
         {/* 1. 마이너스 잔액 */}
         <div style={box('var(--negative)')}>
@@ -628,7 +628,7 @@ function FlowMapPage() {
         <div style={arrow}>↓</div>
 
         {/* 출금 목적지 노드들 */}
-        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(170px,1fr))', gap:10, width:'100%'}}>
+        <div className="flowmap-grid" style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(170px,1fr))', gap:10, width:'100%'}}>
           {/* 카드 청구 */}
           {cardBillTotal > 0 && (
             <div style={node('var(--paper)','#5B6CB5','#5B6CB5')}>
@@ -769,7 +769,7 @@ function FixedCostsPage({ openFixed }) {
 
       {/* 요약 타일 */}
       {isCurrentMonth ? (
-        <div style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:16}}>
+        <div className="fixed-tiles" style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:16}}>
           {[
             {label:`✅ 완료 (${completedItems.length}건)`, val:completedTotal, sub:'이미 빠져나간 금액', color:'var(--ink-3)'},
             {label:`⏳ 예정 (${pendingItems.length}건)`,  val:pendingTotal,   sub:'앞으로 나갈 금액',  color:'var(--negative)'},
@@ -1062,7 +1062,7 @@ function TimelinePage() {
   return (
     <div className="tab-content">
       <PageHeader eyebrow="Calendar" title="Monthly " titleEm="schedule." right={<MonthSwitchLive />} />
-      <div style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:16,alignItems:'start'}}>
+      <div className="timeline-layout" style={{display:'grid',gridTemplateColumns:'1fr 320px',gap:16,alignItems:'start'}}>
         <div className="card">
           <div className="card-title" style={{marginBottom:14}}>자금 흐름 캘린더</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3,marginBottom:4}}>
@@ -1178,7 +1178,7 @@ function ExpensesPage({ openExpense }) {
         <Tile label="필터 결과" num={`${filtered.length}건`} accent="var(--positive)" />
       </div>
       <div className="card" style={{marginBottom:12,padding:'12px 16px'}}>
-        <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <div className="expense-filters" style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
           <input placeholder="🔎 검색" value={search} onChange={e=>setSearch(e.target.value)} style={{flex:'0 1 160px',padding:'7px 11px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:13,background:'var(--bg)'}} />
           <select value={cardFilter} onChange={e=>setCardFilter(e.target.value)} style={{padding:'7px 9px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:12.5,background:'var(--bg)',cursor:'pointer'}}>
             {cardOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
@@ -1916,7 +1916,7 @@ function MortgageBox({ store, toast }) {
       </div>
 
       {/* 핵심 숫자 3칸 */}
-      <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16, marginBottom:14}}>
+      <div className="mortgage-grid" style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:16, marginBottom:14}}>
         <div>
           <div style={{fontSize:10.5, color:'var(--ink-4)', marginBottom:4}}>잔여 잔액</div>
           <div style={{fontFamily:'var(--serif)', fontSize:24, fontWeight:400, letterSpacing:'-0.03em', color:'var(--warm)', lineHeight:1}}>{fmtKRW(balance)}</div>

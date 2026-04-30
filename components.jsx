@@ -113,28 +113,41 @@ function Topbar({ active, setDrawerOpen, openSearch, openNotif, openSettings, th
 }
 
 // Bottom navigation for mobile — picks 5 most-used items
-const BOTTOM_NAV_IDS = ['dashboard', 'expenses', 'fixedcosts', 'creditcards', 'analytics'];
+const BOTTOM_NAV_IDS = ['dashboard', 'expenses', 'timeline', 'fixedcosts', 'analytics'];
 const BOTTOM_NAV_ICONS = {
-  dashboard: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>,
-  expenses: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/><path d="M12 7v5l3 2"/></svg>,
-  fixedcosts: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>,
-  creditcards: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>,
-  analytics: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 2v10l7 7"/><circle cx="12" cy="12" r="2"/></svg>,
+  dashboard:  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>,
+  expenses:   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>,
+  timeline:   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>,
+  fixedcosts: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>,
+  analytics:  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>,
 };
+const BOTTOM_NAV_LABELS = {
+  dashboard:'홈', expenses:'소비', timeline:'일정', fixedcosts:'고정비', analytics:'분석'
+};
+
 function BottomNav({ active, setActive }) {
   const items = NAV.flatMap(g => g.items).filter(i => BOTTOM_NAV_IDS.includes(i.id));
   return (
     <nav className="bottom-nav" aria-label="주요 메뉴">
-      {items.map(item => (
-        <button
-          key={item.id}
-          className={'bn-item' + (active === item.id ? ' active' : '')}
-          onClick={() => setActive(item.id)}
-        >
-          <span className="bn-icon">{BOTTOM_NAV_ICONS[item.id]}</span>
-          <span className="bn-label">{item.label}</span>
-        </button>
-      ))}
+      {items.map(item => {
+        const isActive = active === item.id;
+        return (
+          <button key={item.id}
+            className={'bn-item' + (isActive ? ' active' : '')}
+            onClick={() => setActive(item.id)}
+            style={{position:'relative', paddingTop: isActive ? 8 : 0, transition:'padding .15s'}}
+          >
+            {isActive && (
+              <span style={{
+                position:'absolute', top:0, left:'50%', transform:'translateX(-50%)',
+                width:24, height:3, borderRadius:'0 0 3px 3px', background:'var(--accent)',
+              }} />
+            )}
+            <span className="bn-icon">{BOTTOM_NAV_ICONS[item.id]}</span>
+            <span className="bn-label">{BOTTOM_NAV_LABELS[item.id] || item.label}</span>
+          </button>
+        );
+      })}
     </nav>
   );
 }

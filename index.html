@@ -732,6 +732,28 @@
     /* density compact override on mobile baseline */
     [data-density="compact"] .content { padding: 18px 14px 100px; }
     [data-density="compact"] .page-title { font-size: 26px; }
+
+    /* ── 대시보드 4박스 → 2×2 ── */
+    .mobile-4box { grid-template-columns: repeat(2,1fr) !important; }
+
+    /* ── 캘린더 우측 패널 — 세로 스택 ── */
+    .timeline-layout { grid-template-columns: 1fr !important; }
+    .timeline-side { margin-top: 14px; }
+
+    /* ── 자금흐름 모식도 — 가운데 정렬 ── */
+    .flowmap-grid { grid-template-columns: 1fr !important; }
+
+    /* ── 신용카드 탭 — 1열 ── */
+    .cc-grid { grid-template-columns: 1fr !important; }
+
+    /* ── 분석 탭 2열 → 1열 ── */
+    .grid-3-2 { grid-template-columns: 1fr !important; }
+
+    /* ── 고정비 타일 4→2열 ── */
+    .fixed-tiles { grid-template-columns: repeat(2,1fr) !important; }
+
+    /* ── 인라인 수정 폼 wrap ── */
+    .inline-edit-grid { grid-template-columns: 1fr 1fr !important; }
   }
 
   /* very small */
@@ -740,6 +762,58 @@
     .hero-num { font-size: 28px; }
     .crumbs-current { font-size: 14px; }
     .bn-item .bn-label { display: none; }
+    .mobile-4box { grid-template-columns: repeat(2,1fr) !important; }
+  }
+
+  /* ── 모바일 전용 추가 최적화 ── */
+  @media (max-width: 768px) {
+    /* 대시보드 숫자 크기 조정 */
+    .mobile-num-lg { font-size: 22px !important; }
+
+    /* 주담대 박스 3열 → 1열 */
+    .mortgage-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
+
+    /* 카드 소비 접힘 상태 미리보기 줄바꿈 */
+    .card-preview-chips { flex-wrap: wrap; gap: 4px; }
+
+    /* 소비내역 탭 필터 바 스크롤 */
+    .expense-filters { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
+    .expense-filters::-webkit-scrollbar { display: none; }
+
+    /* 통장별 자금흐름 탭 — 탭 버튼 스크롤 */
+    .bank-tabs { overflow-x: auto; flex-wrap: nowrap; }
+    .bank-tabs::-webkit-scrollbar { display: none; }
+
+    /* 캘린더 날짜 셀 최소 높이 */
+    .cal-cell { min-height: 40px !important; }
+
+    /* 모달 내부 그리드 — 1열로 */
+    .modal-grid-2 { grid-template-columns: 1fr !important; }
+
+    /* FAB(소비 추가) 하단 안전 영역 위로 */
+    .expense-fab {
+      bottom: calc(72px + env(safe-area-inset-bottom) + 12px) !important;
+    }
+
+    /* 대시보드 이달 카드소비 — 접힌 상태 미리보기 높이 제한 */
+    .card-spending-preview { max-height: 60px; overflow: hidden; }
+
+    /* 분석탭 SVG 차트 — 가로 스크롤 */
+    .sim-chart-wrap { overflow-x: auto; }
+    .sim-chart-wrap svg { min-width: 320px; }
+
+    /* 고정비 항목 행 — 버튼 항상 보임 */
+    .fixed-row-btn { opacity: 1 !important; }
+
+    /* 자금흐름 모식도 노드 — 최대 너비 해제 */
+    .flowmap-hub { max-width: 100% !important; }
+    .flowmap-income { max-width: 100% !important; }
+
+    /* 인라인 수정폼 버튼 크기 */
+    .inline-save-btn { height: 40px !important; font-size: 13px !important; }
+
+    /* 신용카드 자동결제 추가 폼 2열 */
+    .autopay-add-grid { grid-template-columns: 1fr 1fr !important; }
   }
 
   /* scrollbar */
