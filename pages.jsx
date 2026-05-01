@@ -259,7 +259,7 @@ function DashboardPage({ openExpense, openCard }) {
         {cardExpanded && (
           <div style={{marginTop:14, borderTop:'1px solid var(--line)', paddingTop:14}}>
             {store.state.cards.map(c => (
-              <CardSpendingRow key={c.id} c={c} monthExp={monthExp} store={store} toast={toast} />
+              <CardSpendingRow key={c.id} c={c} monthExp={monthExp} store={store} toast={toast} ym={ym} />
             ))}
           </div>
         )}
@@ -1342,7 +1342,11 @@ function AnalyticsPage() {
   const fixedOut  = store.state.fixed
     .filter(f=>curOverrides[f.id]!==false)
     .reduce((s,f)=>s+(curMfa[f.id]!==undefined?curMfa[f.id]:f.amount),0);
-  const autoPayOut= (store.state.auto_pays||[]).reduce((s,ap)=>s+ap.amount,0);
+  const autoPayOut= uSe(()=>{
+    const monthlyAPs = store.state.monthlyAutoPays || {};
+    const aps = monthlyAPs[cym] !== undefined ? monthlyAPs[cym] : (store.state.auto_pays||[]);
+    return aps.reduce((s,ap)=>s+ap.amount,0);
+  },[store.state.monthlyAutoPays, store.state.auto_pays, cym]);
   const avgExp    = monthTotals.length ? monthTotals.reduce((s,[,v])=>s+v,0)/monthTotals.length : 500000;
   const monthlyNet = salary - fixedOut - autoPayOut - avgExp;
 
@@ -2199,11 +2203,15 @@ function AutoPayEditRow({ ap, targetYm, customAmt, store, toast, onClose, onMont
     </div>
   );
 }
-function CardSpendingRow({ c, monthExp, store, toast }) {
+function CardSpendingRow({ c, monthExp, store, toast, ym }) {
   const [editBudgetCard, setEditBudgetCard] = uS(false);
   const [budgetCardVal,  setBudgetCardVal]  = uS('');
 
-  const autoPays     = (store.state.auto_pays||[]).filter(ap => ap.cardCo===c.co || ap.cardId===c.id);
+  // ── 핵심 수정: 월별 독립 자동결제 우선 사용 ──
+  // AutoPaySection이 수정하는 monthlyAutoPays[ym]을 읽어야 함
+  const monthlyAPs = store.state.monthlyAutoPays || {};
+  const allAPs = monthlyAPs[ym] !== undefined ? monthlyAPs[ym] : (store.state.auto_pays || []);
+  const autoPays = allAPs.filter(ap => ap.cardCo === c.co || ap.cardId === c.id);
   const autoPayTotal = autoPays.reduce((s,ap) => s+ap.amount, 0);
   const cardBudgetAmt= (store.state.cardMonthlyBudgets||{})[c.id] || c.limit || 1000000;
   const matchCard = (expCard, cardCo) => {
