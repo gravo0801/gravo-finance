@@ -1887,31 +1887,30 @@ function MortgageBox({ store, toast }) {
   const mg = store.state.mortgage || {};
 
   // 표시값은 항상 store에서 직접 읽음 (저장 후 즉시 반영)
-  const balance  = mg.balance       || 0;
-  const original = mg.original      || 300000000;
-  const rate     = mg.rate          || 4.66;
-  const autoAmt  = mg.autoPayment   || 1272220;
-  const extraPerson = mg.extraPayment || 500000;
-  const extraWife   = mg.wifePayment  || 500000;
+  const balance  = mg.balance       ?? 0;
+  const original = mg.original      ?? 300000000;
+  const rate     = mg.rate          ?? 4.66;
+  const autoAmt  = mg.autoPayment   ?? 1272220;
+  const extraPerson = mg.extraPayment ?? 500000;  // ?? 사용: 0도 유효한 값
+  const extraWife   = mg.wifePayment  ?? 500000;  // ?? 사용: 0도 유효한 값
   const extra    = extraPerson + extraWife;
   const totalMonthly = autoAmt + extra;
   const paidPct  = Math.min((original - balance) / original * 100, 100);
   const monthsLeft = balance > 0 ? Math.ceil(balance / totalMonthly) : 0;
 
   // 수정 폼용 state — 수정 버튼 클릭 시 최신 store값으로 초기화
-  const [b, setB]   = uS(balance);
-  const [r, setR]   = uS(rate);
-  const [a, setA]   = uS(autoAmt);
-  const [ex, setEx] = uS(extraPerson);
-  const [wf, setWf] = uS(extraWife);
+  const [b, setB]   = uS(mg.balance       ?? 0);
+  const [r, setR]   = uS(mg.rate          ?? 4.66);
+  const [a, setA]   = uS(mg.autoPayment   ?? 1272220);
+  const [ex, setEx] = uS(mg.extraPayment  ?? 500000);
+  const [wf, setWf] = uS(mg.wifePayment   ?? 500000);
 
   const openEdit = () => {
-    // 항상 최신 store 값으로 폼 초기화
-    setB(mg.balance       || 0);
-    setR(mg.rate          || 4.66);
-    setA(mg.autoPayment   || 1272220);
-    setEx(mg.extraPayment || 500000);
-    setWf(mg.wifePayment  || 500000);
+    setB(mg.balance       ?? 0);
+    setR(mg.rate          ?? 4.66);
+    setA(mg.autoPayment   ?? 1272220);
+    setEx(mg.extraPayment ?? 500000);  // ?? 사용: 0 입력값 보존
+    setWf(mg.wifePayment  ?? 500000);  // ?? 사용: 0 입력값 보존
     setEditing(true);
   };
 
