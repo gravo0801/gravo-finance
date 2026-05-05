@@ -482,7 +482,7 @@ function BankFlowEditRow({initial,onSave,onCancel,isNew}){
 }
 
 // ─────────────────────────────────────────────────────────
-// FLOW MAP — dynamic real data
+// FLOW MAP — 자금 흐름 모식도 (진짜지출 vs 계좌이동 명확히 구분)
 // ─────────────────────────────────────────────────────────
 function FlowMapPage() {
   const store = useStore();
@@ -497,125 +497,116 @@ function FlowMapPage() {
   const woori     = store.state.accounts.find(a=>a.id==='woori');
   const curMinus  = woori?.balance||0;
   const overrides = (store.state.fixedOverrides||{})[ym]||{};
-  const activeFixed = store.state.fixed.filter(f=>overrides[f.id]!==false);
-  const cardBill    = ((store.state.monthlyCardBills||{})[ym])||{};
+  const cardBill  = ((store.state.monthlyCardBills||{})[ym])||{};
   const cardBillTotal = cardBill.total||0;
 
-  // ── 올바른 30일 예상 로직 ──
-  // 현재 잔액은 오늘까지 일어난 모든 입출금이 반영된 실제값
-  // 따라서 오늘 이후 남은 것만 계산하면 됨
-  const now2 = new Date();
+  const now2      = new Date();
   const todayDay2 = now2.getDate();
-  const isCurMonth = y===now2.getFullYear() && m===now2.getMonth()+1;
-  // 오늘 이후 나가는 고정비 (day > today)
-  const remainingFixed = isCurMonth
-    ? activeFixed.filter(f => f.day > todayDay2).reduce((s,f)=>s+f.amount,0)
-    : activeFixed.reduce((s,f)=>s+f.amount,0);
-  // 오늘 이후 들어오는 급여 (아직 안 받은 경우)
-  const remainingSalary = (isCurMonth && salaryDay > todayDay2) ? salary : 0;
-  // 카드대금 (아직 안 나간 경우)
-  const cardPayMaxDay = store.state.cards.reduce((m,c)=>Math.max(m,c.paymentDay||14),14);
+  const isCurMonth= y===now2.getFullYear() && m===now2.getMonth()+1;
+
+  // ── 우리은행 bankFlows 분류 ──────────────────────────────
+  const wooriFlows = ((store.state.bankFlows||{}).woori || []);
+
+  // 계좌간 이체: 목적지가 "내 통장"인 것 (농협/신한/케이/기업/하나/증권/투자 등)
+  const INTERNAL_KEYWORDS = ['농협','신한','케이뱅크','기업','하나','증권','투자','isa','irp','연금','저축','토스','키움','미래에셋','메리츠'];
+  const isInternal = (desc) => INTERNAL_KEYWORDS.some(k => (desc||'').toLowerCase().includes(k.toLowerCase()));
+
+  const internalFlows = wooriFlows.filter(f => (f.kind==='out'||f.kind==='var') && isInternal(f.desc));
+  const realOutFlows  = wooriFlows.filter(f => (f.kind==='out'||f.kind==='var') && !isInternal(f.desc));
+
+  // 진짜 지출: 고정비 (우리은행 관련) + 카드청구 + 실제 출금 항목
+  const mfaFlow = (store.state.monthlyFixedAmounts||{})[ym]||{};
+  const NONWOORI = ['농협은행','자동결제'];
+  const isNW = (f)=> NONWOORI.includes(f.group)||(f.meta||'').includes('농협은행')||(f.name||'').includes('주담대');
+  const wooriFixed = store.state.fixed.filter(f=>overrides[f.id]!==false && !isNW(f));
+  const fixedTotal = wooriFixed.reduce((s,f)=>s+(mfaFlow[f.id]!==undefined?mfaFlow[f.id]:f.amount),0);
+
+  // 진짜 지출 합계 (순자산 감소)
+  const realExpenseTotal = fixedTotal + cardBillTotal + realOutFlows.reduce((s,f)=>s+f.amount,0);
+  // 계좌간 이동 합계 (순자산 변화 없음)
+  const internalTotal = internalFlows.reduce((s,f)=>s+f.amount,0);
+
+  const cardPayMaxDay = store.state.cards.reduce((mx,c)=>Math.max(mx,c.paymentDay||14),14);
+  const remainingSalary   = (isCurMonth && salaryDay > todayDay2) ? salary : 0;
+  const remainingFixed    = isCurMonth ? wooriFixed.filter(f=>f.day>todayDay2).reduce((s,f)=>s+(mfaFlow[f.id]!==undefined?mfaFlow[f.id]:f.amount),0) : fixedTotal;
   const remainingCardBill = (isCurMonth && cardPayMaxDay > todayDay2) ? cardBillTotal : 0;
   const predicted30 = curMinus + remainingSalary - remainingFixed - remainingCardBill;
 
-  // 우리은행 자금흐름에서 출금 항목들
-  const wooriFlows = ((store.state.bankFlows||{}).woori || []).filter(f=>f.kind==='out'||f.kind==='var');
-  // 목적지별 그룹핑 (desc 기반)
-  const flowDestinations = uSe(() => {
-    // 은행/증권사 키워드로 그룹핑
-    const destMap = {};
-    wooriFlows.forEach(f => {
-      const key = f.desc; // 각 항목을 목적지로
-      if (!destMap[key]) destMap[key] = { desc: f.desc, meta: f.meta, amount: 0, day: f.day, kind: f.kind };
-      destMap[key].amount += f.amount;
-    });
-    return Object.values(destMap).sort((a,b)=>a.day-b.day);
-  }, [wooriFlows]);
-
-  // 카테고리별 색상 (이체 목적에 따라)
   const getDestColor = (desc) => {
     const d = desc.toLowerCase();
     if (d.includes('농협')) return '#10B981';
     if (d.includes('신한')) return '#3B82F6';
-    if (d.includes('케이') || d.includes('kbank')) return '#6366F1';
-    if (d.includes('기업') || d.includes('ibk')) return '#8B5CF6';
+    if (d.includes('케이')) return '#6366F1';
+    if (d.includes('기업')||d.includes('ibk')) return '#8B5CF6';
     if (d.includes('하나')) return '#F59E0B';
     if (d.includes('카드')) return '#5B6CB5';
-    if (d.includes('isa') || d.includes('연금') || d.includes('투자') || d.includes('증권')) return '#EC4899';
-    if (d.includes('와이프') || d.includes('생활')) return '#F97316';
-    if (d.includes('수협') || d.includes('적금')) return '#14B8A6';
-    return 'var(--ink-3)';
+    if (d.includes('연금')||d.includes('isa')||d.includes('irp')) return '#EC4899';
+    if (d.includes('증권')||d.includes('투자')) return '#F59E0B';
+    return 'var(--warm)';
   };
+
   const node = (bg, border, accent) => ({
-    background: bg, border: `2px solid ${border}`, borderRadius: 14,
-    padding: '14px 18px', position: 'relative', boxShadow: `0 2px 12px ${accent}22`
+    background:bg, border:`2px solid ${border}`, borderRadius:14,
+    padding:'14px 18px', boxShadow:`0 2px 12px ${accent}22`
   });
-  const arrow = { display:'flex', alignItems:'center', justifyContent:'center', color:'var(--ink-3)', fontSize:20, margin:'4px 0', userSelect:'none' };
-  const lbl = { fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.09em', marginBottom:4 };
-  const bigNum = (color) => ({ fontFamily:'var(--serif)', fontSize:26, fontWeight:400, letterSpacing:'-0.03em', color, lineHeight:1.1 });
-  const rowSt = { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'5px 0', borderBottom:'1px solid var(--line)', fontSize:12.5 };
+  const lbl = {fontSize:10,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.09em',marginBottom:4};
+  const bigNum = (color) => ({fontFamily:'var(--serif)',fontSize:24,fontWeight:400,letterSpacing:'-0.03em',color,lineHeight:1.1});
+  const arrow = {display:'flex',alignItems:'center',justifyContent:'center',color:'var(--ink-3)',fontSize:22,margin:'2px 0',userSelect:'none'};
+  const row = {display:'flex',justifyContent:'space-between',fontSize:12,padding:'3px 0',borderBottom:'1px solid var(--line)',color:'var(--ink-3)'};
 
   return (
     <div className="tab-content">
-      <PageHeader eyebrow="Flow" title="자금 흐름 " titleEm="모식도" sub="급여 → 우리은행 허브 → 각 고정비 출금 경로" />
+      <PageHeader eyebrow="Flow" title="자금 흐름 " titleEm="모식도"
+        sub="급여 유입 → 우리은행 → 진짜지출 vs 계좌이동 구분" />
 
-      {/* 다이어그램 레이아웃 */}
-      <div style={{display:'flex', flexDirection:'column', alignItems:'center', gap:0, maxWidth:680, margin:'0 auto'}}>
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:0,maxWidth:700,margin:'0 auto'}}>
 
-        {/* 소득 노드 */}
-        <div style={{...node('color-mix(in oklab,var(--positive) 8%,var(--paper))','var(--positive)','#10B981'), width:'100%', maxWidth:420}}>
-          <div style={{...lbl, color:'var(--positive)'}}>📥 급여 수입 · {salaryDay}일 입금</div>
-          <div style={{display:'flex', alignItems:'baseline', gap:12, justifyContent:'space-between'}}>
+        {/* ① 급여 수입 */}
+        <div style={{...node('color-mix(in oklab,#10B981 8%,var(--paper))','#10B981','#10B981'),width:'100%',maxWidth:440}}>
+          <div style={{...lbl,color:'#10B981'}}>📥 급여 수입 · {salaryDay}일 입금</div>
+          <div style={{display:'flex',alignItems:'baseline',gap:12,justifyContent:'space-between'}}>
             {editSalary ? (
               <div style={{display:'flex',gap:8,alignItems:'center',flex:1}}>
                 <input type="number" value={salaryVal} onChange={e=>setSalaryVal(e.target.value)}
                   style={{flex:1,padding:'7px 10px',border:'1px solid var(--line)',borderRadius:'var(--r-sm)',fontSize:14,fontFamily:'var(--mono)',background:'var(--bg)'}} />
-                <button className="btn btn-primary btn-sm" onClick={()=>{const v=parseInt(salaryVal);if(!isNaN(v)){store.setSalaryForMonth(ym,v);toast('급여 저장됨');}setEditSalary(false);}}>저장</button>
+                <button className="btn btn-primary btn-sm" onClick={()=>{const v=+salaryVal;if(!isNaN(v)){store.setSalaryForMonth(ym,v);toast('저장됨');}setEditSalary(false);}}>저장</button>
                 <button className="btn btn-sm" onClick={()=>setEditSalary(false)}>취소</button>
               </div>
             ) : (
               <>
-                <div style={bigNum('var(--positive)')}>{fmtKRW(salary)}</div>
+                <div style={bigNum('#10B981')}>{fmtKRW(salary)}</div>
                 <button className="btn btn-sm" onClick={()=>{setSalaryVal(String(salary));setEditSalary(true);}}>수정</button>
               </>
             )}
           </div>
-          {isCurMonth && salaryDay <= todayDay2 && <div style={{fontSize:11,color:'var(--positive)',marginTop:4}}>✅ 이달 수령 완료</div>}
+          {isCurMonth&&salaryDay<=todayDay2&&<div style={{fontSize:11,color:'#10B981',marginTop:4}}>✅ 이달 수령 완료</div>}
         </div>
 
-        {/* 화살표 ↓ */}
         <div style={arrow}>↓</div>
 
-        {/* 우리은행 허브 노드 */}
-        <div style={{...node('color-mix(in oklab,var(--accent) 7%,var(--paper))','var(--accent)','var(--accent)'), width:'100%', maxWidth:420}}>
-          <div style={{...lbl, color:'var(--accent)'}}>🏦 우리은행 마이너스통장 — 허브</div>
-          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginTop:4}}>
+        {/* ② 우리은행 허브 */}
+        <div style={{...node('color-mix(in oklab,var(--accent) 7%,var(--paper))','var(--accent)','var(--accent)'),width:'100%',maxWidth:440}}>
+          <div style={{...lbl,color:'var(--accent)'}}>🏦 우리은행 마이너스통장 — 허브</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginTop:4}}>
             <div>
               <div style={{fontSize:11,color:'var(--ink-4)',marginBottom:3}}>현재 잔액</div>
               <div style={bigNum('var(--negative)')}>{fmtKRW(curMinus)}</div>
             </div>
             <div>
-              <div style={{fontSize:11,color:'var(--ink-4)',marginBottom:3}}>
-                {isCurMonth ? `${new Date().getDate()}일 기준 30일 예상` : '월말 예상'}
-              </div>
+              <div style={{fontSize:11,color:'var(--ink-4)',marginBottom:3}}>{isCurMonth?`${todayDay2}일 기준 30일 예상`:'월말 예상'}</div>
               <div style={bigNum(predicted30>=curMinus?'var(--positive)':'var(--negative)')}>{fmtKRW(predicted30)}</div>
               <div style={{fontSize:10.5,color:'var(--ink-4)',marginTop:3,lineHeight:1.6}}>
-                {isCurMonth ? (
-                  <>
-                    {remainingSalary>0 && `+급여 ${fmtKRW(remainingSalary,{compact:true})} `}
-                    {remainingFixed>0 && `−고정비 ${fmtKRW(remainingFixed,{compact:true})} `}
-                    {remainingCardBill>0 && `−카드 ${fmtKRW(remainingCardBill,{compact:true})}`}
-                    {remainingSalary===0&&remainingFixed===0&&remainingCardBill===0 && '오늘 이후 추가 입출금 없음'}
-                  </>
-                ) : ''}
+                {remainingSalary>0&&`+급여${fmtKRW(remainingSalary,{compact:true})} `}
+                {remainingFixed>0&&`−고정비${fmtKRW(remainingFixed,{compact:true})} `}
+                {remainingCardBill>0&&`−카드${fmtKRW(remainingCardBill,{compact:true})}`}
+                {!remainingSalary&&!remainingFixed&&!remainingCardBill&&'오늘 이후 추가 입출금 없음'}
               </div>
             </div>
           </div>
-          {woori?.limit && (
-            <div style={{marginTop:12}}>
+          {woori?.limit&&(
+            <div style={{marginTop:10}}>
               <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--ink-4)',marginBottom:3}}>
-                <span>한도 사용률</span>
-                <span>{(Math.abs(curMinus)/woori.limit*100).toFixed(1)}%</span>
+                <span>한도 사용률</span><span>{(Math.abs(curMinus)/woori.limit*100).toFixed(1)}%</span>
               </div>
               <div style={{height:5,background:'var(--paper-2)',borderRadius:3,overflow:'hidden'}}>
                 <div style={{height:'100%',background:'var(--negative)',borderRadius:3,width:Math.min(Math.abs(curMinus)/woori.limit*100,100)+'%'}}></div>
@@ -624,82 +615,110 @@ function FlowMapPage() {
           )}
         </div>
 
-        {/* 화살표 ↓ */}
-        <div style={arrow}>↓</div>
+        {/* ↓ 두 방향으로 분기 */}
+        <div style={{display:'flex',width:'100%',maxWidth:440,justifyContent:'space-around',margin:'4px 0',color:'var(--ink-4)',fontSize:12,fontWeight:600}}>
+          <span>↙ 진짜 지출</span>
+          <span>↘ 계좌 이동</span>
+        </div>
 
-        {/* 출금 목적지 노드들 */}
-        <div className="flowmap-grid" style={{display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(170px,1fr))', gap:10, width:'100%'}}>
-          {/* 카드 청구 */}
-          {cardBillTotal > 0 && (
-            <div style={node('var(--paper)','#5B6CB5','#5B6CB5')}>
-              <div style={{...lbl,color:'#5B6CB5'}}>💳 카드 청구</div>
-              <div style={bigNum('#5B6CB5')}>−{fmtKRW(cardBillTotal,{compact:true})}</div>
-              <div style={{marginTop:6}}>
-                {store.state.cards.map(c=>{ const amt=cardBill.breakdown?.[c.id]||0; return amt>0?(<div key={c.id} style={{fontSize:11,display:'flex',justifyContent:'space-between',padding:'2px 0',color:'var(--ink-3)'}}><span>{c.co}</span><span style={{fontFamily:'var(--mono)'}}>{fmtKRW(amt,{compact:true})}</span></div>):null; })}
+        {/* ③ 두 컬럼: 진짜지출 | 계좌이동 */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,width:'100%',alignItems:'start'}}>
+
+          {/* 왼쪽: 진짜 지출 (순자산 감소) */}
+          <div style={node('color-mix(in oklab,var(--negative) 5%,var(--paper))','var(--negative)','var(--negative)')}>
+            <div style={{...lbl,color:'var(--negative)'}}>💸 진짜 지출</div>
+            <div style={bigNum('var(--negative)')}>−{fmtKRW(realExpenseTotal,{compact:true})}</div>
+            <div style={{fontSize:10.5,color:'var(--ink-4)',marginTop:2,marginBottom:8}}>순자산이 줄어드는 항목</div>
+
+            {/* 고정비 */}
+            {wooriFixed.length>0&&(
+              <div style={{marginBottom:6}}>
+                <div style={{fontSize:10,fontWeight:700,color:'var(--warm)',marginBottom:3}}>고정비</div>
+                {wooriFixed.map(f=>{
+                  const amt = mfaFlow[f.id]!==undefined?mfaFlow[f.id]:f.amount;
+                  const done = isCurMonth&&f.day<todayDay2;
+                  return <div key={f.id} style={{...row,opacity:done?.6:1}}>
+                    <span>{f.day}일 {f.name}{done?' ✅':''}</span>
+                    <span style={{fontFamily:'var(--mono)',color:'var(--negative)'}}>−{fmtKRW(amt,{compact:true})}</span>
+                  </div>;
+                })}
               </div>
-              {isCurMonth && cardPayMaxDay <= todayDay2 && <div style={{fontSize:10,color:'var(--ink-3)',marginTop:4}}>✅ 완료</div>}
-            </div>
-          )}
+            )}
 
-          {/* 우리은행 bankFlows 기반 출금 목적지 */}
-          {flowDestinations.length > 0 ? flowDestinations.map((dest, i) => {
-            const color = getDestColor(dest.desc);
-            const isPast = isCurMonth && dest.day < todayDay2;
-            return (
-              <div key={i} style={node('var(--paper)', isPast?'var(--ink-3)':color, isPast?'#888':color)}>
-                <div style={{...lbl, color: isPast?'var(--ink-3)':color}}>
-                  {dest.day}일 이체
-                </div>
-                <div style={bigNum(isPast?'var(--ink-3)':'var(--negative)')}>
-                  −{fmtKRW(dest.amount,{compact:true})}
-                </div>
-                <div style={{fontSize:12,color:'var(--ink-3)',marginTop:4,lineHeight:1.4}}>{dest.desc}</div>
-                {dest.meta && <div style={{fontSize:10.5,color:'var(--ink-4)',marginTop:2}}>{dest.meta}</div>}
-                {isPast && <div style={{fontSize:10,color:'var(--ink-3)',marginTop:4}}>✅ 완료</div>}
+            {/* 카드 청구 */}
+            {cardBillTotal>0&&(
+              <div style={{marginBottom:6}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#5B6CB5',marginBottom:3}}>카드 청구</div>
+                {store.state.cards.map(c=>{const amt=cardBill.breakdown?.[c.id]||0;return amt>0?
+                  <div key={c.id} style={row}><span>{c.paymentDay}일 {c.co}</span><span style={{fontFamily:'var(--mono)',color:'#5B6CB5'}}>−{fmtKRW(amt,{compact:true})}</span></div>:null;})}
               </div>
-            );
-          }) : (
-            /* 기본 고정비 그룹 fallback */
-            Object.entries(groups).filter(([g])=>g!=='농협은행'&&g!=='자동결제').map(([grp,items])=>{
-              const grpTotal = items.reduce((s,f)=>s+f.amount,0);
-              const isPast = isCurMonth && items.every(f=>f.day < todayDay2);
-              return (
-                <div key={grp} style={node('var(--paper)',isPast?'var(--ink-3)':'var(--warm)',isPast?'#888':'var(--warm)')}>
-                  <div style={{...lbl,color:isPast?'var(--ink-3)':'var(--warm)'}}>{grp}</div>
-                  <div style={bigNum(isPast?'var(--ink-3)':'var(--negative)')}>−{fmtKRW(grpTotal,{compact:true})}</div>
-                  {items.sort((a,b)=>a.day-b.day).map(f=>(<div key={f.id} style={{fontSize:11,display:'flex',justifyContent:'space-between',padding:'2px 0',color:'var(--ink-3)'}}><span>{f.day}일 {f.name}</span><span style={{fontFamily:'var(--mono)'}}>{fmtKRW(f.amount,{compact:true})}</span></div>))}
-                  {isPast && <div style={{fontSize:10,color:'var(--ink-3)',marginTop:4}}>✅ 완료</div>}
-                </div>
-              );
-            })
-          )}
+            )}
 
-          {/* 합계 요약 */}
-          <div style={{...node('color-mix(in oklab,var(--negative) 6%,var(--paper))','var(--negative)','var(--negative)'), display:'flex', flexDirection:'column', justifyContent:'center'}}>
-            <div style={{...lbl,color:'var(--negative)'}}>📤 이달 총 출금</div>
-            <div style={bigNum('var(--negative)')}>
-              −{fmtKRW((flowDestinations.reduce((s,d)=>s+d.amount,0)||activeFixed.reduce((s,f)=>s+f.amount,0))+cardBillTotal,{compact:true})}
-            </div>
-            <div style={{fontSize:11.5,color:'var(--ink-3)',marginTop:8,lineHeight:1.8}}>
-              {flowDestinations.length>0
-                ? `통장이체 ${fmtKRW(flowDestinations.reduce((s,d)=>s+d.amount,0),{compact:true})} + 카드 ${fmtKRW(cardBillTotal,{compact:true})}`
-                : `고정비 ${fmtKRW(activeFixed.reduce((s,f)=>s+f.amount,0),{compact:true})} + 카드 ${fmtKRW(cardBillTotal,{compact:true})}`
-              }
-            </div>
+            {/* 기타 실지출 */}
+            {realOutFlows.length>0&&(
+              <div>
+                <div style={{fontSize:10,fontWeight:700,color:'var(--ink-3)',marginBottom:3}}>기타 지출</div>
+                {realOutFlows.map(f=><div key={f.id} style={row}>
+                  <span>{f.day}일 {f.desc}</span>
+                  <span style={{fontFamily:'var(--mono)',color:'var(--negative)'}}>−{fmtKRW(f.amount,{compact:true})}</span>
+                </div>)}
+              </div>
+            )}
+
+            {realExpenseTotal===0&&<div style={{fontSize:12,color:'var(--ink-4)',textAlign:'center',padding:'12px 0'}}>항목 없음</div>}
+          </div>
+
+          {/* 오른쪽: 계좌 이동 (순자산 변화 없음) */}
+          <div style={node('color-mix(in oklab,#3B82F6 5%,var(--paper))','#3B82F6','#3B82F6')}>
+            <div style={{...lbl,color:'#3B82F6'}}>🔄 계좌 이동</div>
+            <div style={bigNum('#3B82F6')}>{fmtKRW(internalTotal,{compact:true})}</div>
+            <div style={{fontSize:10.5,color:'var(--ink-4)',marginTop:2,marginBottom:8}}>내 통장간 이동 (순자산 변화 없음)</div>
+            {internalFlows.length>0 ? internalFlows.sort((a,b)=>a.day-b.day).map(f=>{
+              const done=isCurMonth&&f.day<todayDay2;
+              return <div key={f.id} style={{...row,opacity:done?.6:1}}>
+                <span>{f.day}일 {f.desc}{done?' ✅':''}</span>
+                <span style={{fontFamily:'var(--mono)',color:'#3B82F6'}}>{fmtKRW(f.amount,{compact:true})}</span>
+              </div>;
+            }) : <div style={{fontSize:12,color:'var(--ink-4)',textAlign:'center',padding:'12px 0'}}>항목 없음</div>}
+
+            {internalTotal>0&&(
+              <div style={{marginTop:10,padding:'8px 10px',background:'rgba(59,130,246,0.08)',borderRadius:'var(--r-sm)',fontSize:11.5,color:'#3B82F6',lineHeight:1.7}}>
+                💡 이 금액은 다른 내 통장에 보관 중이므로 순자산에 포함됩니다.
+              </div>
+            )}
           </div>
         </div>
 
-        {/* 안내 메시지 */}
-        {flowDestinations.length === 0 && (
-          <div style={{marginTop:12,padding:'10px 14px',background:'var(--accent-soft)',borderRadius:'var(--r-sm)',fontSize:12,color:'var(--ink-2)'}}>
-            💡 통장별 자금 흐름 탭 → 우리은행 → 항목 추가 시 이 모식도에 자동 반영됩니다.
+        {/* ④ 이달 총정리 */}
+        <div style={{width:'100%',marginTop:12,padding:'14px 18px',background:'var(--paper)',border:'1px solid var(--line)',borderRadius:14,display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,textAlign:'center'}}>
+          <div>
+            <div style={{fontSize:10.5,color:'#10B981',fontWeight:700,marginBottom:4}}>총 유입</div>
+            <div style={{fontFamily:'var(--serif)',fontSize:20,color:'#10B981'}}>+{fmtKRW(salary,{compact:true})}</div>
+            <div style={{fontSize:10.5,color:'var(--ink-4)',marginTop:2}}>급여</div>
+          </div>
+          <div>
+            <div style={{fontSize:10.5,color:'var(--negative)',fontWeight:700,marginBottom:4}}>진짜 지출</div>
+            <div style={{fontFamily:'var(--serif)',fontSize:20,color:'var(--negative)'}}>−{fmtKRW(realExpenseTotal,{compact:true})}</div>
+            <div style={{fontSize:10.5,color:'var(--ink-4)',marginTop:2}}>순자산 감소</div>
+          </div>
+          <div>
+            <div style={{fontSize:10.5,color: (salary-realExpenseTotal)>=0 ?'#10B981':'var(--negative)',fontWeight:700,marginBottom:4}}>실제 잔여</div>
+            <div style={{fontFamily:'var(--serif)',fontSize:20,color:(salary-realExpenseTotal)>=0?'#10B981':'var(--negative)'}}>
+              {salary-realExpenseTotal>=0?'+':'−'}{fmtKRW(Math.abs(salary-realExpenseTotal),{compact:true})}
+            </div>
+            <div style={{fontSize:10.5,color:'var(--ink-4)',marginTop:2}}>급여 − 진짜지출</div>
+          </div>
+        </div>
+
+        {internalFlows.length===0&&realOutFlows.length===0&&(
+          <div style={{marginTop:10,padding:'10px 14px',background:'var(--accent-soft)',borderRadius:'var(--r-sm)',fontSize:12,color:'var(--ink-2)',width:'100%'}}>
+            💡 통장별 자금 흐름 탭 → 우리은행에서 이체 항목을 추가하면 이 모식도에 자동 반영됩니다.
           </div>
         )}
       </div>
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // FIXED COSTS — Woori-only, per-month independent amounts
 // ─────────────────────────────────────────────────────────
