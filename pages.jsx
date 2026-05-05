@@ -1885,20 +1885,36 @@ function FlowEditRow({ ev, store, toast, onClose }) {
 function MortgageBox({ store, toast }) {
   const [editing, setEditing] = uS(false);
   const mg = store.state.mortgage || {};
-  const balance  = mg.balance  || 0;
-  const original = mg.original || 300000000;
-  const rate     = mg.rate     || 4.66;
-  const autoAmt  = mg.autoPayment || 1272220;
-  const extra    = (mg.extraPayment||500000) + (mg.wifePayment||500000);
+
+  // 표시값은 항상 store에서 직접 읽음 (저장 후 즉시 반영)
+  const balance  = mg.balance       || 0;
+  const original = mg.original      || 300000000;
+  const rate     = mg.rate          || 4.66;
+  const autoAmt  = mg.autoPayment   || 1272220;
+  const extraPerson = mg.extraPayment || 500000;
+  const extraWife   = mg.wifePayment  || 500000;
+  const extra    = extraPerson + extraWife;
   const totalMonthly = autoAmt + extra;
   const paidPct  = Math.min((original - balance) / original * 100, 100);
   const monthsLeft = balance > 0 ? Math.ceil(balance / totalMonthly) : 0;
 
+  // 수정 폼용 state — 수정 버튼 클릭 시 최신 store값으로 초기화
   const [b, setB]   = uS(balance);
   const [r, setR]   = uS(rate);
   const [a, setA]   = uS(autoAmt);
-  const [ex, setEx] = uS(mg.extraPayment||500000);
-  const [wf, setWf] = uS(mg.wifePayment||500000);
+  const [ex, setEx] = uS(extraPerson);
+  const [wf, setWf] = uS(extraWife);
+
+  const openEdit = () => {
+    // 항상 최신 store 값으로 폼 초기화
+    setB(mg.balance       || 0);
+    setR(mg.rate          || 4.66);
+    setA(mg.autoPayment   || 1272220);
+    setEx(mg.extraPayment || 500000);
+    setWf(mg.wifePayment  || 500000);
+    setEditing(true);
+  };
+
   const inpSt = {padding:'7px 10px', border:'1px solid var(--line)', borderRadius:'var(--r-sm)', fontSize:13, background:'var(--bg)', fontFamily:'var(--mono)', width:'100%'};
 
   if (editing) {
@@ -1935,7 +1951,7 @@ function MortgageBox({ store, toast }) {
           <div style={{fontSize:10.5, fontWeight:700, color:'#10B981', textTransform:'uppercase', letterSpacing:'0.1em'}}>🏠 주담대</div>
           <div style={{fontSize:12, color:'var(--ink-3)', marginTop:2}}>{mg.bank||'농협은행'} · 금리 {rate}% · 원금 {fmtKRW(original,{compact:true})}</div>
         </div>
-        <button className="btn btn-sm" onClick={()=>setEditing(true)}>수정</button>
+        <button className="btn btn-sm" onClick={openEdit}>수정</button>
       </div>
 
       {/* 핵심 숫자 3칸 */}
