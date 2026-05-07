@@ -158,8 +158,197 @@ let _fbDb         = null;
 let _fbCode       = null;
 let _fbUnsub      = null;
 let _fbTimer      = null;
-let _fbWritingSeq = 0;  // 자기 echo 방지용 시퀀스
 let _fbSyncStatus = { status: 'off', listeners: [] };
+let _fbSelfWriteSeq = 0;   // 자기 echo 방지: 내가 쓴 직후 일시적으로 증가
+
+function fbNotify(s) {
+  _fbSyncStatus.status = s;
+  _fbSyncStatus.listeners.forEach(fn => fn(s));
+}
+function fbOnStatus(fn) {
+  _fbSyncStatus.listeners.push(fn);
+  fn(_fbSyncStatus.status);
+  return () => { _fbSyncStatus.listeners = _fbSyncStatus.listeners.filter(f => f !== fn); };
+}
+
+// Firestore 리스너 — 다른 기기가 쓴 데이터만 적용
+function fbStartListener() {
+  if (_fbUnsub) _fbUnsub();
+  _fbUnsub = _fbDb.doc(`gravo_finance_v2/${_fbCode}`)
+    .onSnapshot(snap => {
+      if (!snap.exists) return;
+      // 내가 방금 쓴 데이터가 되돌아오는 echo 무시
+      if (snap.metadata.hasPendingWrites) return;
+      // 내가 쓴 직후(1.5초 이내) 에는 적용 안 함
+      if (_fbSelfWriteSeq > 0) return;
+
+      const remote  = snap.data();
+      const localTs = +(localStorage.getItem('_gf_ts') || 0);
+      if ((remote._ts || 0) <= localTs) return;
+
+      const parsed = JSON.parse(remote._data || '{}');
+      saveStore(parsed);
+      localStorage.setItem('_gf_ts', String(remote._ts));
+      window._gfForceReload && window._gfForceReload(parsed);
+      fbNotify('ok');
+    }, err => {
+      console.warn('FB listener error:', err);
+      fbNotify('error');
+      setTimeout(() => { if (_fbDb && _fbCode) fbStartListener(); }, 5000);
+    });
+}
+
+// 로컬 변경 → Firestore 업로드 (디바운스 1.2초)
+function fbPush(state) {
+  if (!_fbDb || !_fbCode) return;
+  clearTimeout(_fbTimer);
+  _fbTimer = setTimeout(async () => {
+    _fbSelfWriteSeq++;
+    const seq = _fbSelfWriteSeq;
+    const ts = Date.now();
+    try {
+      await _fbDb.doc(`gravo_finance_v2/${_fbCode}`)
+        .set({ _data: JSON.stringify(state), _ts: ts });
+      localStorage.setItem('_gf_ts', String(ts));
+      fbNotify('ok');
+    } catch(e) {
+      console.warn('FB push error:', e);
+      fbNotify('error');
+    } finally {
+      // 1.5초 후 자기 echo 방지 해제
+      setTimeout(() => { if (_fbSelfWriteSeq === seq) _fbSelfWriteSeq = 0; }, 1500);
+    }
+  }, 1200);
+}
+
+function fbDisconnect() {
+  if (_fbUnsub) { _fbUnsub(); _fbUnsub = null; }
+  clearTimeout(_fbTimer);
+  _fbDb = null; _fbCode = null;
+  [FB_SYNC_KEY_LS, FB_PROJ_LS, FB_CODE_LS].forEach(k => localStorage.removeItem(k));
+  localStorage.removeItem('_gf_ts');
+  fbNotify('off');
+}
+
+// ── 앱 시작 시 자동 연결 ─────────────────────────────────────
+// 핵심 원칙: 클라우드가 항상 진실의 원천(source of truth)
+// 타임스탬프 비교 최소화 → 클럭 스큐 버그 제거
+async function fbAutoConnect(onReload) {
+  const apiKey    = localStorage.getItem(FB_SYNC_KEY_LS);
+  const projectId = localStorage.getItem(FB_PROJ_LS);
+  const syncCode  = localStorage.getItem(FB_CODE_LS);
+  if (!apiKey || !projectId || !syncCode) return;
+
+  window._gfForceReload = onReload;
+  fbNotify('connecting');
+
+  try {
+    let app;
+    try { app = firebase.app('gravo'); }
+    catch(e) { app = firebase.initializeApp(
+      { apiKey, projectId, authDomain: `${projectId}.firebaseapp.com` }, 'gravo'
+    ); }
+    _fbDb   = firebase.firestore(app);
+    _fbCode = syncCode;
+
+    // 클라우드 최신 스냅샷 가져오기
+    const snap = await _fbDb.doc(`gravo_finance_v2/${syncCode}`).get();
+
+    if (snap.exists) {
+      const remote  = snap.data();
+      const cloudTs = remote._ts || 0;
+      const localTs = +(localStorage.getItem('_gf_ts') || 0);
+
+      if (cloudTs > localTs) {
+        // ── 클라우드가 더 최신 → 무조건 적용 ──
+        const parsed = JSON.parse(remote._data || '{}');
+        saveStore(parsed);
+        localStorage.setItem('_gf_ts', String(cloudTs));
+        onReload(parsed);  // React 상태 즉시 갱신
+      } else if (localTs > cloudTs) {
+        // ── 로컬이 더 최신 → 클라우드에 올림
+        // 단, localTs가 정말 PC에서 쓴 것인지 확인: localStorage에 데이터가 있어야
+        const cur = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+        if (cur && cur.expenses !== undefined) {  // SEED가 아닌 진짜 데이터일 때만
+          await _fbDb.doc(`gravo_finance_v2/${syncCode}`)
+            .set({ _data: JSON.stringify(cur), _ts: localTs });
+        }
+      }
+      // cloudTs === localTs: 동일 → 아무것도 안 함
+
+    } else {
+      // 클라우드 비어있음 → 로컬 데이터 첫 업로드
+      const cur = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+      if (cur && cur.expenses !== undefined && (cur.expenses.length > 0 || cur.income > 0)) {
+        const ts = Date.now();
+        await _fbDb.doc(`gravo_finance_v2/${syncCode}`)
+          .set({ _data: JSON.stringify(cur), _ts: ts });
+        localStorage.setItem('_gf_ts', String(ts));
+      }
+    }
+
+    fbStartListener();
+    fbNotify('ok');
+
+  } catch(e) {
+    console.error('fbAutoConnect error:', e.message);
+    fbNotify('error');
+    // 10초 후 재시도
+    setTimeout(() => fbAutoConnect(onReload), 10000);
+  }
+}
+
+// ── 설정에서 수동 연결 ──────────────────────────────────────
+async function fbConnect(apiKey, projectId, syncCode) {
+  fbNotify('connecting');
+  try {
+    let app;
+    try { app = firebase.app('gravo'); }
+    catch(e) { app = firebase.initializeApp(
+      { apiKey, projectId, authDomain: `${projectId}.firebaseapp.com` }, 'gravo'
+    ); }
+    _fbDb   = firebase.firestore(app);
+    _fbCode = syncCode;
+    localStorage.setItem(FB_SYNC_KEY_LS, apiKey);
+    localStorage.setItem(FB_PROJ_LS,     projectId);
+    localStorage.setItem(FB_CODE_LS,     syncCode);
+
+    const snap = await _fbDb.doc(`gravo_finance_v2/${syncCode}`).get();
+    if (snap.exists) {
+      const remote  = snap.data();
+      const cloudTs = remote._ts || 0;
+      const localTs = +(localStorage.getItem('_gf_ts') || 0);
+
+      if (cloudTs > localTs) {
+        const parsed = JSON.parse(remote._data || '{}');
+        saveStore(parsed);
+        localStorage.setItem('_gf_ts', String(cloudTs));
+        window._gfForceReload && window._gfForceReload(parsed);
+      } else if (localTs > cloudTs) {
+        const cur = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+        if (cur && cur.expenses !== undefined) {
+          await _fbDb.doc(`gravo_finance_v2/${syncCode}`)
+            .set({ _data: JSON.stringify(cur), _ts: localTs });
+        }
+      }
+    } else {
+      const cur = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+      if (cur && cur.expenses !== undefined) {
+        const ts = Date.now();
+        await _fbDb.doc(`gravo_finance_v2/${syncCode}`)
+          .set({ _data: JSON.stringify(cur), _ts: ts });
+        localStorage.setItem('_gf_ts', String(ts));
+      }
+    }
+
+    fbStartListener();
+    fbNotify('ok');
+    return true;
+  } catch(e) {
+    fbNotify('error');
+    throw e;
+  }
+}
 
 function fbNotify(s) {
   _fbSyncStatus.status = s;
@@ -221,14 +410,13 @@ function fbDisconnect() {
   fbNotify('off');
 }
 
-// 앱 시작 시 자동 연결 — 항상 클라우드 우선
+// 앱 시작 시 자동 연결 — 항상 클라우드 우선, 리로드 없이 React 상태 직접 갱신
 async function fbAutoConnect(onReload) {
   const apiKey    = localStorage.getItem(FB_SYNC_KEY_LS);
   const projectId = localStorage.getItem(FB_PROJ_LS);
   const syncCode  = localStorage.getItem(FB_CODE_LS);
   if (!apiKey || !projectId || !syncCode) return;
 
-  // _gfForceReload를 미리 등록해서 fbStartListener에서 쓸 수 있게
   window._gfForceReload = onReload;
   fbNotify('connecting');
 
@@ -241,40 +429,34 @@ async function fbAutoConnect(onReload) {
     _fbDb   = firebase.firestore(app);
     _fbCode = syncCode;
 
-    // 클라우드 스냅샷 가져오기
+    // 클라우드 최신 스냅샷 가져오기
     const snap = await _fbDb.doc(`gravo_finance_v2/${syncCode}`).get();
 
     if (snap.exists) {
-      const remote = snap.data();
-      const localTs = +(localStorage.getItem('_gf_ts') || 0);
+      const remote   = snap.data();
+      const localTs  = +(localStorage.getItem('_gf_ts') || 0);
+      const cloudTs  = remote._ts || 0;
 
-      if (remote._ts > localTs) {
-        // ── 클라우드가 더 최신: 즉시 적용 ──
+      if (cloudTs > localTs) {
+        // ── 클라우드가 더 최신 → 무조건 클라우드로 덮어씀 ──
         const parsed = JSON.parse(remote._data || '{}');
         saveStore(parsed);
-        localStorage.setItem('_gf_ts', String(remote._ts));
-
-        if (!sessionStorage.getItem('_gf_loaded')) {
-          // 첫 방문: 리로드해서 깨끗하게 시작
-          sessionStorage.setItem('_gf_loaded', '1');
-          location.reload();
-          return;
-        } else {
-          // 이미 리로드됐거나 재방문: React 상태 직접 갱신 ← 핵심 버그 수정
-          onReload(parsed);
-        }
-      } else {
-        // ── 로컬이 더 최신 또는 동일: 로컬 데이터를 클라우드에 올림 ──
+        localStorage.setItem('_gf_ts', String(cloudTs));
+        // React 상태 직접 갱신 (리로드 없음 — 리로드가 ELSE 분기를 유발하는 버그의 원인)
+        onReload(parsed);
+      } else if (localTs > 0 && localTs > cloudTs) {
+        // ── 로컬이 더 최신 → 클라우드 업데이트 ──
         const cur = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
-        if (cur && localTs > 0) {
+        if (cur) {
           await _fbDb.doc(`gravo_finance_v2/${syncCode}`)
             .set({ _data: JSON.stringify(cur), _ts: localTs });
         }
       }
+      // localTs === cloudTs: 동일하면 아무 것도 안 함 (업로드 불필요)
     } else {
-      // ── 클라우드가 비어있음: 로컬 데이터 첫 업로드 ──
+      // ── 클라우드가 비어있음 → 로컬 데이터 첫 업로드 ──
       const cur = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
-      if (cur) {
+      if (cur && Object.keys(cur).length > 3) { // SEED 이상의 데이터가 있을 때만
         const ts = Date.now();
         await _fbDb.doc(`gravo_finance_v2/${syncCode}`)
           .set({ _data: JSON.stringify(cur), _ts: ts });
@@ -285,7 +467,10 @@ async function fbAutoConnect(onReload) {
     fbStartListener();
     fbNotify('ok');
   } catch(e) {
+    console.error('fbAutoConnect error:', e);
     fbNotify('error');
+    // 5초 후 재시도
+    setTimeout(() => fbAutoConnect(onReload), 5000);
   }
 }
 
@@ -304,28 +489,29 @@ async function fbConnect(apiKey, projectId, syncCode) {
     localStorage.setItem(FB_PROJ_LS,     projectId);
     localStorage.setItem(FB_CODE_LS,     syncCode);
 
-    // 클라우드 최신 데이터 받아서 React 상태 갱신
     const snap = await _fbDb.doc(`gravo_finance_v2/${syncCode}`).get();
     if (snap.exists) {
-      const remote = snap.data();
+      const remote  = snap.data();
       const localTs = +(localStorage.getItem('_gf_ts') || 0);
-      if (remote._ts > localTs) {
+      const cloudTs = remote._ts || 0;
+      if (cloudTs > localTs) {
+        // 클라우드 최신 → 덮어씀
         const parsed = JSON.parse(remote._data || '{}');
         saveStore(parsed);
-        localStorage.setItem('_gf_ts', String(remote._ts));
+        localStorage.setItem('_gf_ts', String(cloudTs));
         window._gfForceReload && window._gfForceReload(parsed);
-      } else if (localTs > 0) {
+      } else if (localTs > cloudTs) {
+        // 로컬 최신 → 업로드 (localTs만 기준으로 비교)
         const cur = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
         if (cur) {
-          const ts = Date.now();
           await _fbDb.doc(`gravo_finance_v2/${syncCode}`)
-            .set({ _data: JSON.stringify(cur), _ts: ts });
-          localStorage.setItem('_gf_ts', String(ts));
+            .set({ _data: JSON.stringify(cur), _ts: localTs });
         }
       }
+      // 같으면 아무것도 안 함
     } else {
       const cur = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
-      if (cur) {
+      if (cur && Object.keys(cur).length > 3) {
         const ts = Date.now();
         await _fbDb.doc(`gravo_finance_v2/${syncCode}`)
           .set({ _data: JSON.stringify(cur), _ts: ts });
