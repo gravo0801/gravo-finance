@@ -231,8 +231,8 @@ function fbDisconnect() {
 }
 
 // ── 앱 시작 시 자동 연결 ─────────────────────────────────────
-// 핵심 원칙: 클라우드가 항상 진실의 원천(source of truth)
-// 타임스탬프 비교 최소화 → 클럭 스큐 버그 제거
+// 핵심 원칙: 시작 시 항상 클라우드 데이터를 적용 (타임스탬프 비교 없음)
+// 타임스탬프(_gf_ts)는 오직 리스너의 자기 echo 방지에만 사용
 async function fbAutoConnect(onReload) {
   const apiKey    = localStorage.getItem(FB_SYNC_KEY_LS);
   const projectId = localStorage.getItem(FB_PROJ_LS);
@@ -242,60 +242,48 @@ async function fbAutoConnect(onReload) {
   window._gfForceReload = onReload;
   fbNotify('connecting');
 
-  try {
-    let app;
-    try { app = firebase.app('gravo'); }
-    catch(e) { app = firebase.initializeApp(
-      { apiKey, projectId, authDomain: `${projectId}.firebaseapp.com` }, 'gravo'
-    ); }
-    _fbDb   = firebase.firestore(app);
-    _fbCode = syncCode;
+  const tryConnect = async () => {
+    try {
+      let app;
+      try { app = firebase.app('gravo'); }
+      catch(e) { app = firebase.initializeApp(
+        { apiKey, projectId, authDomain: `${projectId}.firebaseapp.com` }, 'gravo'
+      ); }
+      _fbDb   = firebase.firestore(app);
+      _fbCode = syncCode;
 
-    // 클라우드 최신 스냅샷 가져오기
-    const snap = await _fbDb.doc(`gravo_finance_v2/${syncCode}`).get();
+      const snap = await _fbDb.doc(`gravo_finance_v2/${syncCode}`).get();
 
-    if (snap.exists) {
-      const remote  = snap.data();
-      const cloudTs = remote._ts || 0;
-      const localTs = +(localStorage.getItem('_gf_ts') || 0);
-
-      if (cloudTs > localTs) {
-        // ── 클라우드가 더 최신 → 무조건 적용 ──
-        const parsed = JSON.parse(remote._data || '{}');
+      if (snap.exists) {
+        // ── 클라우드에 데이터 있음 → 무조건 적용 (비교 없음) ──
+        const remote  = snap.data();
+        const cloudTs = remote._ts || 0;
+        const parsed  = JSON.parse(remote._data || '{}');
         saveStore(parsed);
         localStorage.setItem('_gf_ts', String(cloudTs));
-        onReload(parsed);  // React 상태 즉시 갱신
-      } else if (localTs > cloudTs) {
-        // ── 로컬이 더 최신 → 클라우드에 올림
-        // 단, localTs가 정말 PC에서 쓴 것인지 확인: localStorage에 데이터가 있어야
+        onReload(parsed);
+      } else {
+        // ── 클라우드 비어있음 → 로컬 데이터 첫 업로드 ──
         const cur = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
-        if (cur && cur.expenses !== undefined) {  // SEED가 아닌 진짜 데이터일 때만
+        if (cur && cur.expenses !== undefined) {
+          const ts = Date.now();
           await _fbDb.doc(`gravo_finance_v2/${syncCode}`)
-            .set({ _data: JSON.stringify(cur), _ts: localTs });
+            .set({ _data: JSON.stringify(cur), _ts: ts });
+          localStorage.setItem('_gf_ts', String(ts));
         }
       }
-      // cloudTs === localTs: 동일 → 아무것도 안 함
 
-    } else {
-      // 클라우드 비어있음 → 로컬 데이터 첫 업로드
-      const cur = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
-      if (cur && cur.expenses !== undefined && (cur.expenses.length > 0 || cur.income > 0)) {
-        const ts = Date.now();
-        await _fbDb.doc(`gravo_finance_v2/${syncCode}`)
-          .set({ _data: JSON.stringify(cur), _ts: ts });
-        localStorage.setItem('_gf_ts', String(ts));
-      }
+      fbStartListener();
+      fbNotify('ok');
+
+    } catch(e) {
+      console.error('fbAutoConnect error:', e.message);
+      fbNotify('error');
+      setTimeout(tryConnect, 8000);
     }
+  };
 
-    fbStartListener();
-    fbNotify('ok');
-
-  } catch(e) {
-    console.error('fbAutoConnect error:', e.message);
-    fbNotify('error');
-    // 10초 후 재시도
-    setTimeout(() => fbAutoConnect(onReload), 10000);
-  }
+  await tryConnect();
 }
 
 // ── 설정에서 수동 연결 ──────────────────────────────────────
@@ -315,22 +303,13 @@ async function fbConnect(apiKey, projectId, syncCode) {
 
     const snap = await _fbDb.doc(`gravo_finance_v2/${syncCode}`).get();
     if (snap.exists) {
+      // 항상 클라우드 데이터 적용
       const remote  = snap.data();
       const cloudTs = remote._ts || 0;
-      const localTs = +(localStorage.getItem('_gf_ts') || 0);
-
-      if (cloudTs > localTs) {
-        const parsed = JSON.parse(remote._data || '{}');
-        saveStore(parsed);
-        localStorage.setItem('_gf_ts', String(cloudTs));
-        window._gfForceReload && window._gfForceReload(parsed);
-      } else if (localTs > cloudTs) {
-        const cur = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
-        if (cur && cur.expenses !== undefined) {
-          await _fbDb.doc(`gravo_finance_v2/${syncCode}`)
-            .set({ _data: JSON.stringify(cur), _ts: localTs });
-        }
-      }
+      const parsed  = JSON.parse(remote._data || '{}');
+      saveStore(parsed);
+      localStorage.setItem('_gf_ts', String(cloudTs));
+      window._gfForceReload && window._gfForceReload(parsed);
     } else {
       const cur = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
       if (cur && cur.expenses !== undefined) {
