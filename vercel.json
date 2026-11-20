@@ -1,12 +1,5 @@
 {
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "/api/:path*"
-    },
-    {
-      "source": "/",
-      "destination": "/gravo-finance.html"
-    }
+  "headers": [
+    { "source": "/(app.js|seed.js|style.css|index.html)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
   ]
 }

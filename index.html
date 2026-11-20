@@ -2,838 +2,157 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Gravo Finance — Personal Finance OS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="마통 관리">
+<title>마통 관리 · Gravo Finance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;1,8..60,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
 
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<header class="top">
+  <div class="wrap top-in">
+    <div class="brand">마통 관리</div>
+    <div class="top-right">
+      <div class="top-bal" id="topBal">—<small>마통 잔액</small></div>
+      <button class="icon-btn" id="openSettings" type="button" aria-label="설정"><span class="sync" id="syncDot"></span></button>
+    </div>
+  </div>
+  <nav class="wrap tabs" role="tablist" aria-label="화면">
+    <button class="tab" role="tab" data-tab="home" aria-selected="true">홈</button>
+    <button class="tab" role="tab" data-tab="tx" aria-selected="false">거래</button>
+    <button class="tab" role="tab" data-tab="plan" aria-selected="false">계획</button>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div id="notice" class="notice" hidden></div>
+
+  <section id="home" data-view>
+    <div class="card">
+      <h2>캡처 붙여넣기</h2>
+      <div id="pasteZone" class="paste" contenteditable="true" spellcheck="false" autocorrect="off" aria-label="캡처를 붙여넣는 곳"
+           data-ph="여기를 누르고 붙여넣기&#10;(키보드 클립보드에서 캡처 선택 · PC는 Ctrl+V)"></div>
+      <div class="row">
+        <label class="btn" for="pickFile">사진 선택</label>
+        <label class="btn" for="pickCam">카메라</label>
+        <input id="pickFile" type="file" accept="image/*" multiple hidden>
+        <input id="pickCam" type="file" accept="image/*" capture="environment" hidden>
+        <label class="switch"><input type="checkbox" id="autoSave" checked> 잔액 검증이 맞으면 바로 반영</label>
+      </div>
+      <p class="hint" id="pasteHint">통장·카드 화면 캡처를 올리면 금액과 날짜를 읽어 자동으로 계산합니다. 한 장에 10~30초쯤 걸립니다.</p>
+      <div id="queue" class="list" style="gap:10px"></div>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="card">
+      <h2>마통 잔액 추이</h2>
+      <div class="legend"><span><i></i>기록된 잔액</span><span><i class="dash"></i><span id="lgProj">상환 예상</span></span></div>
+      <div class="chart" id="chart"></div>
+    </div>
+
+    <div class="card">
+      <h2 id="limTitle">카드별 이번 달 사용액</h2>
+      <p class="sub">막대는 상한 대비 사용액, 검은 눈금은 월 목표(실적 기준)입니다.</p>
+      <div class="lim" id="limits"></div>
+    </div>
+
+    <div class="card">
+      <h2 id="flowTitle">이번 달 우리 통장 흐름</h2>
+      <p class="sub">저장된 우리은행 거래 기준입니다. 캡처하지 않은 거래는 빠집니다.</p>
+      <div class="flow" id="flow"></div>
+      <div class="cats" id="cats"></div>
+    </div>
+  </section>
+
+  <section id="tx" data-view hidden>
+    <div class="card">
+      <div class="chips" id="txFilter" role="group" aria-label="거래 구분">
+        <button class="chip" data-f="all" aria-pressed="true">전체</button>
+        <button class="chip" data-f="woori" aria-pressed="false">우리 통장</button>
+        <button class="chip" data-f="nh" aria-pressed="false">농협 통장</button>
+        <button class="chip" data-f="card" aria-pressed="false">카드</button>
+      </div>
+      <div class="list" id="txList"></div>
+    </div>
+    <div class="card">
+      <h2>직접 추가</h2>
+      <form class="form" id="manForm" autocomplete="off">
+        <label class="fld">구분
+          <select id="mType"><option value="우리">우리 통장</option><option value="농협">농협 통장</option><option value="신한">신한 통장</option><option value="card:농협">농협카드</option><option value="card:롯데">롯데카드</option><option value="card:신한">신한카드</option><option value="card:삼성">삼성카드</option><option value="card:현대">현대카드</option><option value="card:국민">국민카드</option></select></label>
+        <label class="fld">날짜<input id="mDate" type="date" required></label>
+        <label class="fld">시각<input id="mTime" type="time"></label>
+        <label class="fld">내용<input id="mDesc" type="text" maxlength="60" required></label>
+        <label class="fld">금액 (통장: 입금 +, 출금 − / 카드: 결제액)<input id="mAmt" type="text" inputmode="numeric" placeholder="12900" required></label>
+        <label class="fld">거래 후 잔액 (통장만)<input id="mBal" type="text" inputmode="numeric" placeholder="-41505973"></label>
+        <button class="btn primary" type="submit">추가</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>캡처 기록</h2>
+      <div class="list" id="capLog"></div>
+      <div class="viewer" id="viewer"></div>
+    </div>
+  </section>
+
+  <section id="plan" data-view hidden>
+    <div class="card">
+      <h2>마통에 남기는 금액별 완납 시기</h2>
+      <p class="sub" id="payoffNote">—</p>
+      <label class="fld" style="max-width:240px">예상선에 쓸 월 잔류액
+        <select id="surplusSel"></select></label>
+      <div class="scroll-x"><table class="tb" id="payoff"></table></div>
+    </div>
+    <div class="card">
+      <h2>제2계좌 월 출금 계획</h2>
+      <p class="sub" id="planNote">—</p>
+      <div class="scroll-x"><table class="tb" id="planTbl"></table></div>
+    </div>
+    <div class="card">
+      <h2>현금 고정비</h2>
+      <div class="scroll-x"><table class="tb" id="fixCash"></table></div>
+    </div>
+    <div class="card">
+      <h2>카드 자동결제</h2>
+      <div class="scroll-x"><table class="tb" id="autoPays"></table></div>
+    </div>
+    <div class="card">
+      <h2>주담대</h2>
+      <div class="mort" id="mort"></div>
+      <p class="sub" id="mortNote"></p>
+    </div>
+    <details class="more card">
+      <summary>기준과 가정</summary>
+      <p class="sub">2026-11-06 이전 잔액은 12개월 입출금 분석의 월말 값(만 원 단위, 1억 왕복 송금 제외)입니다. 마통 금리 5.2%는 추정치이고, 농협카드 3개월 실적은 이용월 기준이라 은행 인정 기준과 다를 수 있습니다. 고정비·이체 계획은 2026-11-20 초안이고, 카드 자동결제와 주담대는 기존 앱에 기록된 값입니다.</p>
+    </details>
+  </section>
+</main>
+
+<dialog class="settings" id="settings">
+  <form method="dialog" class="settings-in" id="setForm">
+    <h2>설정</h2>
+    <p class="sub" id="syncText">—</p>
+    <label class="fld">동기화 코드 (모든 기기에서 같은 값)<input id="sCode" type="text" autocomplete="off"></label>
+    <label class="fld">인식 암호 (Vercel의 APP_PASSCODE를 설정했을 때만)<input id="sPass" type="password" autocomplete="off"></label>
+    <label class="fld">개인 Anthropic API 키 (Vercel에 키가 없을 때만, 이 기기에만 저장)<input id="sKey" type="password" autocomplete="off" placeholder="sk-ant-..."></label>
+    <div class="row">
+      <button class="btn primary" value="save" id="sSave">저장</button>
+      <button class="btn" value="cancel" formnovalidate>닫기</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
 
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-<script>
-  // ── Gravo Firebase 자동 연결 설정 ──────────────────────────
-  // 이 블록에 실제 Firebase API Key를 넣으면 PC방 등 새 기기에서도
-  // 앱을 열자마자 자동으로 동기화됩니다.
-  // Firebase Console → 프로젝트 설정 → 웹 앱 → apiKey 값을 복사해서 붙여넣으세요.
-  window.__GRAVO_FB_API_KEY__   = 'AIzaSyAN7s01gb9AsmeMVdgWGY6pllX9cm1SLJ0';
-  window.__GRAVO_FB_PROJ_ID__   = 'endoapp-cc066';
-  window.__GRAVO_FB_SYNC_CODE__ = 'gravo2026';
-</script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
-
-<style>
-  :root {
-    /* Claude-inspired warm palette */
-    --bg: #F5F1EB;          /* warm cream */
-    --bg-2: #EFEAE2;        /* deeper cream */
-    --paper: #FBF8F3;       /* card surface */
-    --paper-2: #F2EDE4;     /* sunken surface */
-
-    --ink: #1A1714;         /* deep ink — primary text */
-    --ink-2: #3D3833;       /* secondary */
-    --ink-3: #6B6259;       /* tertiary */
-    --ink-4: #9A9189;       /* muted */
-    --ink-5: #C9C2B8;       /* faint */
-
-    --line: rgba(26,23,20,0.08);
-    --line-2: rgba(26,23,20,0.14);
-
-    --accent: #C96442;      /* Claude terracotta */
-    --accent-2: #B5532E;    /* deeper */
-    --accent-soft: rgba(201,100,66,0.10);
-    --accent-line: rgba(201,100,66,0.22);
-
-    --positive: #5C8A5A;    /* sage green, not neon */
-    --positive-soft: rgba(92,138,90,0.10);
-    --negative: #B54040;    /* warm red */
-    --negative-soft: rgba(181,64,64,0.09);
-    --warm: #C49058;        /* amber */
-    --warm-soft: rgba(196,144,88,0.10);
-    --indigo: #5B6CB5;
-    --indigo-soft: rgba(91,108,181,0.10);
-
-    --serif: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
-    --sans: 'Pretendard', -apple-system, sans-serif;
-    --mono: 'JetBrains Mono', 'SF Mono', monospace;
-
-    --r-sm: 8px;
-    --r-md: 12px;
-    --r-lg: 18px;
-    --r-pill: 999px;
-
-    --shadow-sm: 0 1px 0 rgba(26,23,20,0.04);
-    --shadow-md: 0 1px 2px rgba(26,23,20,0.04), 0 4px 16px rgba(26,23,20,0.04);
-    --shadow-lg: 0 8px 40px rgba(26,23,20,0.08);
-  }
-
-  /* Dark mode */
-  [data-theme="dark"] {
-    --bg: #1A1714;
-    --bg-2: #211E1A;
-    --paper: #25211C;
-    --paper-2: #2D2823;
-
-    --ink: #F5F1EB;
-    --ink-2: #DBD4C8;
-    --ink-3: #ADA39A;
-    --ink-4: #7E756B;
-    --ink-5: #4F4843;
-
-    --line: rgba(245,241,235,0.08);
-    --line-2: rgba(245,241,235,0.14);
-
-    --accent: #E07A56;
-    --accent-2: #C96442;
-    --accent-soft: rgba(224,122,86,0.14);
-    --accent-line: rgba(224,122,86,0.28);
-
-    --positive: #7BA876;
-    --positive-soft: rgba(123,168,118,0.14);
-    --negative: #D6655F;
-    --negative-soft: rgba(214,101,95,0.14);
-    --warm: #D8A56C;
-    --warm-soft: rgba(216,165,108,0.12);
-    --indigo: #8B9BD8;
-    --indigo-soft: rgba(139,155,216,0.12);
-  }
-
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; }
-  body {
-    font-family: var(--sans);
-    background: var(--bg);
-    color: var(--ink);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    font-feature-settings: "ss01", "cv11";
-    line-height: 1.5;
-  }
-  button, input, select, textarea { font-family: inherit; outline: none; color: inherit; }
-  ::selection { background: var(--accent-soft); color: var(--ink); }
-
-  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; letter-spacing: -0.01em; }
-  .serif { font-family: var(--serif); font-feature-settings: "ss01"; }
-
-  /* layout */
-  .app { display: flex; min-height: 100vh; transition: background 0.3s; }
-  .sidebar {
-    width: 240px;
-    flex-shrink: 0;
-    border-right: 1px solid var(--line);
-    background: var(--bg);
-    position: sticky; top: 0; height: 100vh;
-    display: flex; flex-direction: column;
-    padding: 24px 16px;
-    transition: background 0.3s, border-color 0.3s;
-  }
-  .main { flex: 1; min-width: 0; }
-  .topbar {
-    height: 64px;
-    border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0 40px;
-    position: sticky; top: 0; z-index: 30;
-    background: color-mix(in oklab, var(--bg) 88%, transparent);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-  }
-  .content { padding: 40px; max-width: 1280px; }
-
-  /* sidebar */
-  .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 24px; }
-  .brand-mark {
-    width: 30px; height: 30px; border-radius: 8px;
-    background: var(--ink); color: var(--bg);
-    display: flex; align-items: center; justify-content: center;
-    font-family: var(--serif); font-weight: 600; font-size: 16px;
-    font-style: italic;
-    transition: background 0.3s, color 0.3s;
-  }
-  .brand-name {
-    font-family: var(--serif); font-size: 19px; font-weight: 500;
-    letter-spacing: -0.02em; color: var(--ink);
-  }
-  .brand-name em { font-style: italic; font-weight: 400; }
-
-  .nav-section { padding: 14px 0 4px; }
-  .nav-section-title {
-    font-size: 10.5px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.12em;
-    color: var(--ink-4); padding: 0 8px 8px;
-  }
-  .nav-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 7px 10px;
-    border-radius: var(--r-sm);
-    cursor: pointer;
-    font-size: 13.5px; font-weight: 500;
-    color: var(--ink-2);
-    transition: background 0.12s, color 0.12s;
-    user-select: none;
-  }
-  .nav-item:hover { background: var(--paper-2); color: var(--ink); }
-  .nav-item.active {
-    background: var(--ink); color: var(--bg);
-  }
-  [data-theme="dark"] .nav-item.active { background: var(--paper-2); color: var(--ink); }
-  .nav-item-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: currentColor; opacity: 0.5; flex-shrink: 0;
-  }
-  .nav-item.active .nav-item-dot { opacity: 1; background: var(--accent); }
-
-  .sidebar-foot {
-    margin-top: auto;
-    padding: 16px 8px 4px;
-    border-top: 1px solid var(--line);
-    font-size: 11px; color: var(--ink-4);
-    line-height: 1.5;
-  }
-
-  /* topbar */
-  .crumbs { display: flex; align-items: center; gap: 10px; }
-  .crumbs-section { font-size: 12px; color: var(--ink-4); }
-  .crumbs-divider { color: var(--ink-5); }
-  .crumbs-current {
-    font-family: var(--serif); font-size: 18px; font-weight: 500;
-    letter-spacing: -0.015em; color: var(--ink);
-  }
-  .topbar-right { display: flex; align-items: center; gap: 14px; }
-  .date-pill {
-    font-family: var(--mono); font-size: 11.5px;
-    color: var(--ink-3);
-    padding: 5px 10px;
-    border: 1px solid var(--line);
-    border-radius: var(--r-pill);
-    background: var(--paper);
-  }
-  .icon-btn {
-    width: 32px; height: 32px;
-    border: 1px solid var(--line);
-    background: var(--paper);
-    border-radius: var(--r-sm);
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer; color: var(--ink-2);
-    transition: all 0.12s;
-  }
-  .icon-btn:hover { background: var(--paper-2); color: var(--ink); border-color: var(--line-2); }
-
-  /* page header */
-  .page-head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 32px; gap: 24px; flex-wrap: wrap; }
-  .page-eyebrow {
-    font-size: 11px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.14em;
-    color: var(--accent); margin-bottom: 10px;
-  }
-  .page-title {
-    font-family: var(--serif); font-size: 30px; font-weight: 400;
-    letter-spacing: -0.02em; color: var(--ink);
-    line-height: 1.15;
-  }
-  .page-title em { font-style: italic; font-weight: 400; color: var(--ink-3); }
-  .page-sub { color: var(--ink-3); font-size: 14px; margin-top: 8px; max-width: 60ch; }
-
-  .month-switch {
-    display: flex; align-items: center; gap: 4px;
-    border: 1px solid var(--line);
-    border-radius: var(--r-pill);
-    padding: 3px;
-    background: var(--paper);
-  }
-  .month-switch button {
-    width: 28px; height: 28px; border: none; background: transparent;
-    border-radius: var(--r-pill); cursor: pointer;
-    color: var(--ink-3); display: flex; align-items: center; justify-content: center;
-    transition: all 0.12s;
-  }
-  .month-switch button:hover { background: var(--paper-2); color: var(--ink); }
-  .month-switch .label { padding: 0 14px; font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
-
-  /* hero balance band */
-  .hero-balance {
-    display: grid; grid-template-columns: 1.6fr 1fr 1fr;
-    gap: 1px; background: var(--line);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    overflow: hidden;
-    margin-bottom: 28px;
-    background: var(--paper);
-  }
-  .hero-cell {
-    padding: 28px 28px;
-    background: var(--paper);
-    position: relative;
-  }
-  .hero-cell + .hero-cell { box-shadow: -1px 0 0 var(--line); }
-  .hero-label {
-    font-size: 11px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.12em;
-    color: var(--ink-4); margin-bottom: 14px;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .hero-label-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-  }
-  .hero-num {
-    font-family: var(--serif); font-size: 44px; font-weight: 400;
-    letter-spacing: -0.035em; line-height: 1;
-    font-variant-numeric: tabular-nums;
-  }
-  .hero-num small { font-size: 22px; color: var(--ink-3); font-weight: 400; margin-left: 4px; }
-  .hero-meta { font-size: 12.5px; color: var(--ink-3); margin-top: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .delta {
-    display: inline-flex; align-items: center; gap: 3px;
-    font-family: var(--mono); font-size: 12px; font-weight: 600;
-    padding: 2px 7px; border-radius: var(--r-pill);
-  }
-  .delta.up { background: var(--positive-soft); color: var(--positive); }
-  .delta.down { background: var(--negative-soft); color: var(--negative); }
-  .delta.neu { background: var(--paper-2); color: var(--ink-3); }
-
-  /* generic card */
-  .card {
-    background: var(--paper);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    padding: 24px;
-    transition: all 0.18s;
-  }
-  .card-head {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 20px;
-  }
-  .card-title {
-    font-family: var(--serif); font-size: 17px; font-weight: 500;
-    letter-spacing: -0.015em; color: var(--ink);
-  }
-  .card-title em { font-style: italic; color: var(--ink-3); font-weight: 400; }
-  .card-sub { font-size: 12px; color: var(--ink-4); margin-top: 2px; }
-
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-  .grid-5-3 { display: grid; grid-template-columns: 5fr 3fr; gap: 20px; }
-  .grid-3-2 { display: grid; grid-template-columns: 3fr 2fr; gap: 20px; }
-
-  /* small stat tile */
-  .tile {
-    background: var(--paper);
-    border: 1px solid var(--line);
-    border-radius: var(--r-md);
-    padding: 18px 20px;
-  }
-  .tile-label { font-size: 11px; color: var(--ink-4); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin-bottom: 8px; }
-  .tile-num { font-family: var(--mono); font-size: 22px; font-weight: 600; color: var(--ink); letter-spacing: -0.02em; }
-
-  /* rows */
-  .row {
-    display: flex; align-items: center; gap: 14px;
-    padding: 14px 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .row:last-child { border-bottom: none; }
-  .row:first-of-type { padding-top: 4px; }
-
-  .day-chip {
-    width: 36px; height: 36px;
-    border-radius: 10px;
-    background: var(--paper-2);
-    color: var(--ink-2);
-    display: flex; align-items: center; justify-content: center;
-    font-family: var(--mono); font-size: 12px; font-weight: 600;
-    flex-shrink: 0;
-  }
-  .day-chip.in { background: var(--positive-soft); color: var(--positive); }
-  .day-chip.out { background: var(--negative-soft); color: var(--negative); }
-  .day-chip.var { background: var(--warm-soft); color: var(--warm); }
-
-  .row-body { flex: 1; min-width: 0; }
-  .row-title { font-size: 14px; font-weight: 600; color: var(--ink); }
-  .row-meta { font-size: 12px; color: var(--ink-4); margin-top: 2px; }
-  .row-amt { font-family: var(--mono); font-size: 14px; font-weight: 600; white-space: nowrap; }
-  .row-amt.in { color: var(--positive); }
-  .row-amt.out { color: var(--negative); }
-
-  /* category icon (using initials/glyphs, not emoji) */
-  .cat-mark {
-    width: 38px; height: 38px;
-    border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    font-family: var(--serif); font-size: 16px; font-weight: 500;
-    font-style: italic;
-    flex-shrink: 0;
-  }
-
-  /* pills / chips / badges */
-  .chip {
-    display: inline-flex; align-items: center; gap: 5px;
-    font-size: 11px; font-weight: 500;
-    padding: 3px 9px;
-    border-radius: var(--r-pill);
-    background: var(--paper-2); color: var(--ink-3);
-    border: 1px solid var(--line);
-  }
-  .chip.accent { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
-  .chip.pos { background: var(--positive-soft); color: var(--positive); border-color: transparent; }
-  .chip.neg { background: var(--negative-soft); color: var(--negative); border-color: transparent; }
-  .chip.warm { background: var(--warm-soft); color: var(--warm); border-color: transparent; }
-  .chip.indigo { background: var(--indigo-soft); color: var(--indigo); border-color: transparent; }
-
-  /* buttons */
-  .btn {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 14px;
-    font-size: 13px; font-weight: 500;
-    border-radius: var(--r-sm);
-    border: 1px solid var(--line);
-    background: var(--paper); color: var(--ink-2);
-    cursor: pointer; transition: all 0.12s;
-    white-space: nowrap;
-  }
-  .btn:hover { background: var(--paper-2); color: var(--ink); border-color: var(--line-2); }
-  .btn-primary {
-    background: var(--ink); color: var(--bg); border-color: var(--ink);
-  }
-  .btn-primary:hover { background: var(--ink-2); color: var(--bg); border-color: var(--ink-2); }
-  .btn-accent {
-    background: var(--accent); color: #fff; border-color: var(--accent);
-  }
-  .btn-accent:hover { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
-  .btn-ghost { border: none; background: transparent; padding: 6px 10px; }
-  .btn-sm { padding: 5px 10px; font-size: 12px; }
-
-  /* progress */
-  .bar { height: 4px; background: var(--paper-2); border-radius: var(--r-pill); overflow: hidden; position: relative; }
-  .bar-fill { height: 100%; border-radius: var(--r-pill); background: var(--accent); transition: width 0.6s cubic-bezier(.4,0,.2,1); }
-  .bar.thin { height: 3px; }
-
-  /* segmented control */
-  .seg { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--paper); }
-  .seg-item {
-    padding: 5px 14px; border-radius: var(--r-pill);
-    font-size: 12.5px; font-weight: 500; color: var(--ink-3);
-    cursor: pointer; transition: all 0.12s;
-    border: none; background: transparent;
-  }
-  .seg-item.active { background: var(--ink); color: var(--bg); }
-  [data-theme="dark"] .seg-item.active { background: var(--paper-2); color: var(--ink); }
-  .seg-item:hover:not(.active) { color: var(--ink); }
-
-  /* sparkline */
-  .spark { width: 100%; height: 56px; }
-  .spark path.line { fill: none; stroke: var(--accent); stroke-width: 1.5; }
-  .spark path.area { fill: var(--accent); opacity: 0.08; }
-
-  /* tab content fade */
-  .tab-content { animation: fadeUp 0.28s ease; }
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
-
-  /* expense item */
-  .expense-row {
-    display: grid; grid-template-columns: auto 1fr auto auto;
-    gap: 14px; align-items: center;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .expense-row:last-child { border-bottom: none; }
-
-  /* calendar */
-  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-  .cal-h { text-align: center; font-size: 10.5px; font-weight: 600; color: var(--ink-4); padding: 6px 0; text-transform: uppercase; letter-spacing: 0.08em; }
-  .cal-day {
-    aspect-ratio: 1; min-height: 56px;
-    border-radius: 8px;
-    background: var(--paper);
-    border: 1px solid var(--line);
-    padding: 6px 8px;
-    display: flex; flex-direction: column; gap: 4px;
-    font-size: 11px; color: var(--ink-3);
-    position: relative;
-    cursor: pointer; transition: all 0.12s;
-  }
-  .cal-day:hover { border-color: var(--line-2); transform: translateY(-1px); }
-  .cal-day.empty { background: transparent; border-color: transparent; cursor: default; pointer-events: none; }
-  .cal-day.today { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 700; }
-  .cal-day.has-event { border-color: var(--line-2); }
-  .cal-day .num { font-weight: 600; font-size: 12px; }
-  .cal-dots { display: flex; gap: 3px; margin-top: auto; }
-  .cal-dot { width: 5px; height: 5px; border-radius: 50%; }
-
-  /* credit card */
-  .cc {
-    aspect-ratio: 16/10;
-    border-radius: var(--r-lg);
-    padding: 22px;
-    color: #fff;
-    position: relative; overflow: hidden;
-    display: flex; flex-direction: column; justify-content: space-between;
-    cursor: pointer; transition: transform 0.18s;
-    box-shadow: var(--shadow-md);
-  }
-  .cc:hover { transform: translateY(-3px); }
-  .cc::before {
-    content: ''; position: absolute; top: -40%; right: -20%;
-    width: 60%; height: 200%;
-    background: rgba(255,255,255,0.06);
-    transform: rotate(20deg);
-    border-radius: 50%;
-  }
-  .cc-co { font-size: 11px; font-weight: 600; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.14em; position: relative; z-index: 1; }
-  .cc-name { font-family: var(--serif); font-size: 18px; font-weight: 500; letter-spacing: -0.01em; margin-top: 4px; position: relative; z-index: 1; }
-  .cc-foot { display: flex; justify-content: space-between; align-items: end; font-family: var(--mono); font-size: 11.5px; opacity: 0.85; position: relative; z-index: 1; }
-
-  /* flow diagram */
-  .flow-svg { width: 100%; height: auto; }
-  .flow-node-bg { fill: var(--paper); stroke: var(--line-2); stroke-width: 1; }
-  .flow-node-bg.income { fill: var(--positive-soft); stroke: var(--positive); }
-  .flow-node-bg.hub { fill: var(--accent-soft); stroke: var(--accent); }
-  .flow-node-bg.out { fill: var(--negative-soft); stroke: var(--negative); }
-  .flow-node-text { font-family: var(--sans); font-size: 12px; font-weight: 600; fill: var(--ink); text-anchor: middle; }
-  .flow-node-meta { font-family: var(--mono); font-size: 11px; fill: var(--ink-3); text-anchor: middle; }
-  .flow-line { fill: none; stroke: var(--line-2); stroke-width: 1.5; stroke-dasharray: 4 4; }
-  .flow-line.solid { stroke-dasharray: none; }
-  .flow-line.income { stroke: var(--positive); }
-  .flow-line.out { stroke: var(--negative); }
-
-  /* ai card */
-  .ai-card {
-    background: linear-gradient(135deg, var(--paper) 0%, var(--paper-2) 100%);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    padding: 28px;
-  }
-  .ai-input-wrap {
-    display: flex; gap: 8px; margin-top: 16px;
-    background: var(--paper); border: 1px solid var(--line);
-    border-radius: var(--r-md); padding: 5px;
-  }
-  .ai-input { flex: 1; border: none; background: transparent; padding: 10px 12px; font-size: 13.5px; }
-
-  /* tweaks scoping reset */
-  .tweaks-host * { box-sizing: border-box; }
-
-  /* utility */
-  .muted { color: var(--ink-3); }
-  .faint { color: var(--ink-4); }
-  .pos { color: var(--positive); }
-  .neg { color: var(--negative); }
-  .accent-c { color: var(--accent); }
-  .text-sm { font-size: 12px; }
-  .text-xs { font-size: 11px; }
-  .fw6 { font-weight: 600; }
-  .fw5 { font-weight: 500; }
-  .gap-sm { display: flex; gap: 8px; }
-  .gap-md { display: flex; gap: 14px; }
-  .between { display: flex; align-items: center; justify-content: space-between; }
-  .stack { display: flex; flex-direction: column; gap: 12px; }
-  .mt-sm { margin-top: 12px; }
-  .mt-md { margin-top: 20px; }
-  .mt-lg { margin-top: 32px; }
-
-  /* density compact */
-  [data-density="compact"] .content { padding: 28px 32px; }
-  [data-density="compact"] .card { padding: 18px; }
-  [data-density="compact"] .hero-cell { padding: 20px 22px; }
-  [data-density="compact"] .hero-num { font-size: 36px; }
-  [data-density="compact"] .row { padding: 10px 0; }
-  [data-density="compact"] .page-head { margin-bottom: 22px; }
-  [data-density="compact"] .page-title { font-size: 26px; }
-
-  /* tweak panel positioning */
-  .gravo-tweaks-panel { z-index: 100; }
-
-  /* mobile defaults — hide drawer chrome + bottom nav on desktop */
-  .sidebar-scrim { display: none; }
-  .sidebar-head-mobile { display: none; }
-  .topbar-menu { display: none !important; }
-  .bottom-nav { display: none; }
-
-  /* responsive */
-  @media (max-width: 1100px) {
-    .grid-3, .grid-5-3, .grid-3-2, .hero-balance { grid-template-columns: 1fr; }
-    .grid-2 { grid-template-columns: 1fr; }
-    .grid-4 { grid-template-columns: repeat(2, 1fr); }
-    .hero-cell + .hero-cell { box-shadow: 0 -1px 0 var(--line); }
-    .sidebar { width: 220px; }
-  }
-
-  /* mobile (≤768) — drawer sidebar + bottom nav + compact topbar */
-  @media (max-width: 768px) {
-    .app { display: block; min-height: 100vh; }
-    .main { width: 100%; }
-
-    /* sidebar becomes a drawer */
-    .sidebar {
-      position: fixed; top: 0; left: 0;
-      width: 280px; max-width: 82vw; height: 100vh;
-      transform: translateX(-100%);
-      transition: transform 0.28s cubic-bezier(.4,0,.2,1);
-      z-index: 80;
-      box-shadow: 0 8px 40px rgba(0,0,0,0.18);
-      padding: 16px;
-      overflow-y: auto;
-    }
-    .sidebar.open { transform: translateX(0); }
-    .sidebar-head-desktop { display: none; }
-    .sidebar-head-mobile {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 4px 4px 16px;
-    }
-    .sidebar-head-mobile .brand { padding: 0; }
-    .sidebar-close { width: 36px; height: 36px; }
-
-    .sidebar-scrim {
-      display: block;
-      position: fixed; inset: 0;
-      background: rgba(26,23,20,0.4);
-      backdrop-filter: blur(2px);
-      opacity: 0; pointer-events: none;
-      transition: opacity 0.24s;
-      z-index: 70;
-    }
-    .sidebar-scrim.open { opacity: 1; pointer-events: auto; }
-
-    /* topbar adjustments */
-    .topbar { padding: 0 16px; height: 56px; gap: 12px; }
-    .topbar-menu { display: flex !important; }
-    .crumbs { flex: 1; min-width: 0; }
-    .crumbs-section, .crumbs-divider { display: none; }
-    .crumbs-current { font-size: 16px; }
-    .topbar-right { gap: 8px; }
-    .date-pill { display: none; }
-
-    /* content padding */
-    .content { padding: 24px 16px 100px; max-width: 100%; }
-
-    /* page header */
-    .page-head { flex-direction: column; align-items: stretch; gap: 16px; margin-bottom: 22px; }
-    .page-title { font-size: 24px; }
-    .page-eyebrow { margin-bottom: 6px; }
-
-    /* hero balance — single column, smaller */
-    .hero-balance { grid-template-columns: 1fr; margin-bottom: 20px; border-radius: var(--r-md); }
-    .hero-cell { padding: 18px 18px; }
-    .hero-num { font-size: 32px; }
-    .hero-num small { font-size: 16px; }
-    .hero-label { margin-bottom: 8px; }
-
-    /* grids collapse */
-    .grid-2, .grid-3, .grid-4, .grid-5-3, .grid-3-2 { grid-template-columns: 1fr; gap: 14px; }
-
-    /* cards tighter */
-    .card { padding: 18px; border-radius: var(--r-md); }
-    .card-head { margin-bottom: 14px; }
-    .card-title { font-size: 16px; }
-
-    /* tile */
-    .tile { padding: 14px 16px; }
-    .tile-num { font-size: 18px; }
-
-    /* rows */
-    .row { padding: 12px 0; gap: 10px; }
-    .day-chip { width: 32px; height: 32px; font-size: 11px; }
-    .row-title { font-size: 13.5px; }
-    .row-amt { font-size: 13px; }
-
-    /* expense rows */
-    .expense-row { grid-template-columns: auto 1fr auto; gap: 10px; }
-    .expense-row .row-meta-extra { display: none; }
-
-    /* calendar */
-    .cal-day { min-height: 44px; padding: 4px 5px; }
-    .cal-day .num { font-size: 11px; }
-    .cal-dot { width: 4px; height: 4px; }
-
-    /* credit card aspect/grid */
-    .grid-cc { grid-template-columns: 1fr !important; }
-    .cc { aspect-ratio: 16/10; padding: 18px; }
-    .cc-name { font-size: 16px; }
-
-    /* month switch */
-    .month-switch { width: 100%; justify-content: space-between; }
-
-    /* segmented control wraps */
-    .seg { flex-wrap: wrap; }
-    .seg-item { padding: 5px 10px; font-size: 11.5px; }
-
-    /* buttons */
-    .btn { padding: 9px 14px; font-size: 13px; }
-
-    /* sticky topbar safe-area */
-    .topbar { padding-top: env(safe-area-inset-top); height: calc(56px + env(safe-area-inset-top)); }
-
-    /* tweaks panel — full-width sheet on mobile */
-    .gravo-tweaks-panel {
-      left: 8px !important; right: 8px !important;
-      bottom: calc(72px + env(safe-area-inset-bottom)) !important;
-      width: auto !important; max-width: none !important;
-      top: auto !important;
-    }
-
-    /* modal sheet on mobile */
-    .modal-card {
-      align-self: flex-end !important;
-      width: 100% !important;
-      max-width: 100% !important;
-      border-radius: 18px 18px 0 0 !important;
-      max-height: 92vh;
-      animation: sheetUp 0.28s cubic-bezier(.4,0,.2,1) !important;
-    }
-    @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-    .modal-scrim { align-items: flex-end !important; }
-
-    /* AI page */
-    .ai-card { padding: 20px; }
-
-    /* bottom nav */
-    .bottom-nav {
-      display: flex;
-      position: fixed; bottom: 0; left: 0; right: 0;
-      height: calc(64px + env(safe-area-inset-bottom));
-      padding-bottom: env(safe-area-inset-bottom);
-      background: color-mix(in oklab, var(--bg) 92%, transparent);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      border-top: 1px solid var(--line);
-      z-index: 60;
-      align-items: stretch;
-      justify-content: space-around;
-    }
-    .bn-item {
-      flex: 1;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 3px;
-      background: transparent; border: none;
-      color: var(--ink-4); cursor: pointer;
-      font-size: 10px; font-weight: 500;
-      transition: color 0.12s;
-      padding: 0;
-      min-width: 0;
-    }
-    .bn-item.active { color: var(--accent); }
-    .bn-item .bn-icon { display: flex; }
-    .bn-item .bn-label {
-      font-size: 10px; letter-spacing: -0.01em;
-      max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    /* bn-fab 제거됨 — 소비 추가는 소비내역 탭에서 */
-    .bn-fab { display: none !important; }
-
-    /* 소비내역 모바일 플로팅 버튼 */
-    .expense-fab { display: none; }
-    @media (max-width: 768px) {
-      .expense-fab { display: flex !important; }
-    }
-
-    /* density compact override on mobile baseline */
-    [data-density="compact"] .content { padding: 18px 14px 100px; }
-    [data-density="compact"] .page-title { font-size: 26px; }
-
-    /* ── 대시보드 4박스 → 2×2 ── */
-    .mobile-4box { grid-template-columns: repeat(2,1fr) !important; }
-
-    /* ── 캘린더 우측 패널 — 세로 스택 ── */
-    .timeline-layout { grid-template-columns: 1fr !important; }
-    .timeline-side { margin-top: 14px; }
-
-    /* ── 자금흐름 모식도 — 가운데 정렬 ── */
-    .flowmap-grid { grid-template-columns: 1fr !important; }
-
-    /* ── 신용카드 탭 — 1열 ── */
-    .cc-grid { grid-template-columns: 1fr !important; }
-
-    /* ── 분석 탭 2열 → 1열 ── */
-    .grid-3-2 { grid-template-columns: 1fr !important; }
-
-    /* ── 고정비 타일 4→2열 ── */
-    .fixed-tiles { grid-template-columns: repeat(2,1fr) !important; }
-
-    /* ── 인라인 수정 폼 wrap ── */
-    .inline-edit-grid { grid-template-columns: 1fr 1fr !important; }
-  }
-
-  /* very small */
-  @media (max-width: 380px) {
-    .page-title { font-size: 24px; }
-    .hero-num { font-size: 28px; }
-    .crumbs-current { font-size: 14px; }
-    .bn-item .bn-label { display: none; }
-    .mobile-4box { grid-template-columns: repeat(2,1fr) !important; }
-  }
-
-  /* ── 모바일 전용 추가 최적화 ── */
-  @media (max-width: 768px) {
-    /* 대시보드 숫자 크기 조정 */
-    .mobile-num-lg { font-size: 22px !important; }
-
-    /* 주담대 박스 3열 → 1열 */
-    .mortgage-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
-
-    /* 카드 소비 접힘 상태 미리보기 줄바꿈 */
-    .card-preview-chips { flex-wrap: wrap; gap: 4px; }
-
-    /* 소비내역 탭 필터 바 스크롤 */
-    .expense-filters { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
-    .expense-filters::-webkit-scrollbar { display: none; }
-
-    /* 통장별 자금흐름 탭 — 탭 버튼 스크롤 */
-    .bank-tabs { overflow-x: auto; flex-wrap: nowrap; }
-    .bank-tabs::-webkit-scrollbar { display: none; }
-
-    /* 캘린더 날짜 셀 최소 높이 */
-    .cal-cell { min-height: 40px !important; }
-
-    /* 모달 내부 그리드 — 1열로 */
-    .modal-grid-2 { grid-template-columns: 1fr !important; }
-
-    /* FAB(소비 추가) 하단 안전 영역 위로 */
-    .expense-fab {
-      bottom: calc(72px + env(safe-area-inset-bottom) + 12px) !important;
-    }
-
-    /* 대시보드 이달 카드소비 — 접힌 상태 미리보기 높이 제한 */
-    .card-spending-preview { max-height: 60px; overflow: hidden; }
-
-    /* 분석탭 SVG 차트 — 가로 스크롤 */
-    .sim-chart-wrap { overflow-x: auto; }
-    .sim-chart-wrap svg { min-width: 320px; }
-
-    /* 고정비 항목 행 — 버튼 항상 보임 */
-    .fixed-row-btn { opacity: 1 !important; }
-
-    /* 자금흐름 모식도 노드 — 최대 너비 해제 */
-    .flowmap-hub { max-width: 100% !important; }
-    .flowmap-income { max-width: 100% !important; }
-
-    /* 인라인 수정폼 버튼 크기 */
-    .inline-save-btn { height: 40px !important; font-size: 13px !important; }
-
-    /* 신용카드 자동결제 추가 폼 2열 */
-    .autopay-add-grid { grid-template-columns: 1fr 1fr !important; }
-  }
-
-  /* scrollbar */
-  ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 5px; border: 2px solid var(--bg); }
-  ::-webkit-scrollbar-track { background: transparent; }
-</style>
-</head>
-<body data-theme="light" data-density="comfy">
-
-<div id="root"></div>
-
-<script type="text/babel" src="tweaks-panel.jsx"></script>
-<script type="text/babel" src="data.jsx"></script>
-<script type="text/babel" src="store.jsx"></script>
-<script type="text/babel" src="components.jsx"></script>
-<script type="text/babel" src="modals.jsx"></script>
-<script type="text/babel" src="features.jsx"></script>
-<script type="text/babel" src="pages.jsx"></script>
-<script type="text/babel" src="app.jsx"></script>
-
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="/seed.js"></script>
+<script src="/app.js"></script>
 </body>
 </html>
