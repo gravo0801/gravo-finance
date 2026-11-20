@@ -191,3 +191,14 @@ dialog.settings::backdrop { background: rgba(0,0,0,.4); }
 .tb tr.short td { color: var(--bad); }
 .tb td:first-child, #taxSched td:nth-child(1), #autoPays td:nth-child(1) { white-space: nowrap; }
 #taxSched td:nth-child(2) { min-width: 96px; }
+
+/* 중복 대조 · 수정 */
+.st { font-size: 12px; white-space: nowrap; font-weight: 600; }
+.st.new { color: var(--ok); } .st.same { color: var(--mute); font-weight: 400; } .st.upgrade { color: var(--accent); } .st.maybe, .st.nodate { color: var(--warn); }
+.rv tr.dim td { opacity: .55; }
+.rv tr.dim td:nth-child(2) { opacity: 1; }
+.msum { display: grid; gap: 4px; margin: 8px 0; }
+.msum .mline { font-size: 14px; font-weight: 600; }
+.msum .warnt { color: var(--warn); } .msum .okt { color: var(--ok); }
+.acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.txed { display: grid; gap: 10px; padding: 12px; margin: 4px 0 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
