@@ -25,8 +25,10 @@ function buildPrompt(today, n) {
     '7. desc는 화면에 보이는 거래처·적요를 그대로 짧게.',
     '8. 숫자를 확실히 읽을 수 없는 거래는 추측하지 말고 빼고 notes에 적으세요. 화면 경계에서 잘린 거래도 빼세요.',
     'account(bank만): 계좌 은행 "우리" | "농협" | "신한" | "기타". screen_balance: 화면 위쪽 등에 현재 잔액이 크게 보이면 그 숫자, 없으면 null.',
-    'JSON 하나만 답하세요. 설명 문장이나 코드 블록 표시는 쓰지 마세요. 예:',
-    '{"screen":"bank","account":"우리","screen_balance":null,"items":[{"date":"2026-11-20","time":"08:15","desc":"배형우","amount":10531209,"balance":-41505973,"card":null,"category":"본인이체"}],"notes":""}',
+    '읽는 순서: 먼저 화면에서 날짜를 모두 찾아 period(from=가장 이른 날짜, to=가장 늦은 날짜)를 정하고, 그다음에 거래 행의 금액과 잔액을 읽으세요.',
+    '날짜는 가장 중요합니다. 거래마다 date를 반드시 채우세요. 날짜 머리글이나 행에서 날짜를 확인할 수 없으면 추측하지 말고 date를 null로 두세요.',
+    'JSON 하나만 답하세요. 설명 문장이나 코드 블록 표시는 쓰지 마세요. 키 순서는 screen, account, period, screen_balance, items, notes 입니다. 예:',
+    '{"screen":"bank","account":"우리","period":{"from":"2026-11-19","to":"2026-11-20"},"screen_balance":null,"items":[{"date":"2026-11-20","time":"08:15","desc":"배형우","amount":10531209,"balance":-41505973,"card":null,"category":"본인이체"}],"notes":""}',
   ].join('\n');
 }
 

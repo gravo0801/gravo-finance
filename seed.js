@@ -97,8 +97,8 @@ window.GF_SEED = {
     { type: 'bank', account: '우리', date: '2026-11-20', time: '07:13', desc: '배형우', amount: 1000000, balance: -52037182, category: '투자·증권' },
     { type: 'bank', account: '우리', date: '2026-11-20', time: '08:15', desc: '배형우', amount: 10531209, balance: -41505973, category: '투자·증권' },
     // 농협카드 (PDF 월 합계, 11월 개별)
-    { type: 'card', card: '농협', date: '2026-09-30', time: '', desc: '9월 이용 합계 (PDF, 23건)', amount: 477800, category: '기타' },
-    { type: 'card', card: '농협', date: '2026-10-31', time: '', desc: '10월 이용 합계 (PDF, 27건, IKEA 포함)', amount: 645050, category: '기타' },
+    { type: 'card', card: '농협', date: '2026-09-30', time: '', desc: '9월 이용 합계 (PDF, 23건)', summary: true, amount: 477800, category: '기타' },
+    { type: 'card', card: '농협', date: '2026-10-31', time: '', desc: '10월 이용 합계 (PDF, 27건, IKEA 포함)', summary: true, amount: 645050, category: '기타' },
     { type: 'card', card: '농협', date: '2026-11-01', time: '', desc: '외식 (PDF)', amount: 33000, category: '외식·카페' },
     { type: 'card', card: '농협', date: '2026-11-08', time: '', desc: '서브웨이', amount: 7900, category: '외식·카페' },
     { type: 'card', card: '농협', date: '2026-11-08', time: '', desc: '앤티앤스', amount: 5000, category: '외식·카페' },
