@@ -154,3 +154,40 @@ dialog.settings::backdrop { background: rgba(0,0,0,.4); }
 .mort { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 .mort div { display: grid; gap: 2px; }
 .mort b { font-variant-numeric: tabular-nums; font-size: 17px; }
+/* ---- tabs scroll, calendar, cards, tax ---- */
+.tabs { overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { flex: 1 0 auto; padding-inline: 10px; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cal-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; color: var(--mute); }
+.cal-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+.ev-in { background: var(--ok); } .ev-card { background: var(--accent); } .ev-auto { background: #8b5cf6; } .ev-plan { background: var(--warn); } .ev-tax { background: var(--bad); } .ev-tx { background: var(--mute); }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.cal .dow { text-align: center; font-size: 11px; color: var(--mute); padding: 4px 0; }
+.cal .dow.sun, .cal .dnum.sun { color: var(--bad); } .cal .dow.sat, .cal .dnum.sat { color: var(--accent); }
+.cal button.day-c { min-height: 64px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 4px; display: grid; align-content: start; gap: 3px; text-align: left; cursor: pointer; min-width: 0; }
+.cal button.day-c.today { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.cal button.day-c.sel { background: var(--soft); }
+.cal .dnum { font-size: 12px; font-weight: 600; }
+.cal .dots { display: flex; flex-wrap: wrap; gap: 2px; }
+.cal .dots i { width: 6px; height: 6px; border-radius: 2px; }
+.cal .damt { font-size: 10px; color: var(--mute); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev { display: grid; grid-template-columns: 8px 1fr auto; gap: 4px 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.ev:last-child { border-bottom: 0; }
+.ev > i { width: 8px; height: 8px; border-radius: 2px; }
+.ev .t { font-size: 14px; min-width: 0; overflow-wrap: anywhere; }
+.ev .t small { display: block; font-size: 12px; color: var(--mute); }
+.ev .a { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.cardgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.cc { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; min-width: 0; border-top: 4px solid var(--cc, var(--accent)); }
+.cc-top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.cc-top b { font-size: 16px; } .cc-top small { display: block; color: var(--mute); font-size: 12px; }
+.cc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; font-size: 13px; }
+.cc-grid span { color: var(--mute); font-size: 12px; display: block; }
+.cc-grid b { font-variant-numeric: tabular-nums; font-weight: 600; }
+.cc p { margin: 0; font-size: 13px; }
+.cc .edit { display: grid; gap: 8px; }
+.tb input.inl { width: 90px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; background: var(--bg); text-align: right; font: inherit; }
+.tb tr.short td { color: var(--bad); }
+.tb td:first-child, #taxSched td:nth-child(1), #autoPays td:nth-child(1) { white-space: nowrap; }
+#taxSched td:nth-child(2) { min-width: 96px; }
