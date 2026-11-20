@@ -11,8 +11,9 @@ const lsSet = (k, v) => { try { if (v == null || v === '') localStorage.removeIt
 
 const S = {
   data: { ref: {}, tx: {}, captures: {} }, fb: null, docRef: null, code: lsGet(LS.code, 'gravo2026'), sync: 'off', ready: false,
-  files: {}, edits: {}, ctl: {}, running: new Set(), thumbs: {}, tab: 'home', txf: 'all', armed: null, view: null, surplus: null, qsig: '',
+  files: {}, edits: {}, ctl: {}, running: new Set(), thumbs: {}, tab: 'home', txf: 'all', armed: null, view: null, surplus: null, qsig: '', calYm: null, calDay: null, cardEdit: null, ensured: false,
 };
+const TABS = ['home', 'tx', 'cal', 'cards', 'tax', 'plan'];
 const CARDS = ['농협', '롯데', '신한', '삼성', '현대', '국민', '기타'];
 const CARD_CODE = { '농협': 'nh', '롯데': 'lotte', '신한': 'shinhan', '삼성': 'samsung', '현대': 'hyundai', '국민': 'kb', '기타': 'etc' };
 const ACCT_CODE = { '우리': 'woori', '농협': 'nh', '신한': 'shinhan', '기타': 'etc' };
@@ -89,7 +90,7 @@ async function migrateOld(db) {
 }
 async function connect() {
   cacheLoad(); S.ready = Object.keys(S.data.ref || {}).length > 0; render();
-  if (typeof firebase === 'undefined') { setSync('off', '동기화 서비스를 불러오지 못했습니다. 이 기기에만 저장 중입니다.'); if (!S.ready) { S.data = seedData(); cacheSave(); S.ready = true; render(); } return; }
+  if (typeof firebase === 'undefined') { setSync('off', '동기화 서비스를 불러오지 못했습니다. 이 기기에만 저장 중입니다.'); if (!S.ready) { S.data = seedData(); cacheSave(); S.ready = true; render(); } ensureRef(); return; }
   setSync('connecting');
   try {
     let app; try { app = firebase.app('gravo-mt'); } catch (e) { app = firebase.initializeApp({ apiKey: FB.apiKey, projectId: FB.projectId, authDomain: FB.projectId + '.firebaseapp.com' }, 'gravo-mt'); }
@@ -104,11 +105,12 @@ async function connect() {
     }
     S.docRef.onSnapshot((d) => {
       if (!d.exists) return; const v = d.data();
-      S.data = { ref: v.ref || {}, tx: v.tx || {}, captures: v.captures || {} }; S.ready = true; cacheSave(); setSync('ok'); render();
+      S.data = { ref: v.ref || {}, tx: v.tx || {}, captures: v.captures || {} }; S.ready = true; cacheSave(); setSync('ok'); render(); ensureRef();
     }, (err) => { console.warn(err); setSync('error'); });
   } catch (e) {
     console.warn(e); setSync('error', '동기화 연결 실패 (' + (e.code || e.message) + '). 이 기기에만 저장 중입니다.');
     if (!S.ready) { S.data = seedData(); cacheSave(); S.ready = true; render(); }
+    ensureRef();
   }
 }
 
@@ -460,11 +462,6 @@ function renderPlan(ser) {
   $('fixCash').replaceChildren(h('thead', {}, h('tr', {}, h('th', { text: '항목' }), h('th', { text: '출금' }), h('th', { class: 'n', text: '월(만 원)' }))),
     h('tbody', {}, fixed.map((r) => h('tr', {}, h('td', { text: r.name }), h('td', { text: r.via }), h('td', { class: 'n', text: (+r.man).toFixed(1) })))),
     h('tfoot', {}, h('tr', {}, h('td', { text: '합계' }), h('td'), h('td', { class: 'n', text: fsum.toFixed(1) }))));
-  const ap = refList('autopays').slice().sort((a, b) => (a.card === b.card ? (a.day || 0) - (b.day || 0) : CARDS.indexOf(a.card) - CARDS.indexOf(b.card)));
-  const groups = d3.rollups(ap, (v) => d3.sum(v, (x) => +x.amount), (x) => x.card);
-  $('autoPays').replaceChildren(h('thead', {}, h('tr', {}, h('th', { text: '카드' }), h('th', { text: '항목' }), h('th', { class: 'n', text: '결제일' }), h('th', { class: 'n', text: '월(원)' }))),
-    h('tbody', {}, ap.map((r) => h('tr', {}, h('td', { text: r.card }), h('td', { text: r.name }), h('td', { class: 'n', text: r.day ? r.day + '일' : '' }), h('td', { class: 'n', text: won(+r.amount) })))),
-    h('tfoot', {}, h('tr', {}, h('td', { text: '합계' }), h('td', { text: groups.map(([k, v]) => k + ' ' + manv(v / 1e4, 1) + '만').join(' · ') }), h('td'), h('td', { class: 'n', text: won(d3.sum(ap, (x) => +x.amount)) }))));
   const mg = S.data.ref.mortgage; const mort = $('mort'); mort.replaceChildren();
   if (mg && mg.balance) {
     const pay = (+mg.autoPayment || 0) + (+mg.extraPayment || 0) + (+mg.wifePayment || 0); let b = +mg.balance, n = 0; const r = (+mg.rate || 0) / 1200;
@@ -476,13 +473,193 @@ function renderPlan(ser) {
   } else { mort.append(h('p', { class: 'empty', text: '주담대 기록이 없습니다.' })); $('mortNote').textContent = ''; }
 }
 
+/* ================= reference defaults ================= */
+function ensureRef() {
+  if (S.ensured || !S.ready || !window.GF_SEED) return; S.ensured = true;
+  Object.entries(window.GF_SEED.ref).forEach(([k, v]) => { if (S.data.ref[k] == null) store.setRef(k, JSON.parse(JSON.stringify(v))); });
+}
+
+/* ================= shared helpers ================= */
+const ds = (dt) => dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' + pad(dt.getDate());
+const ymShift = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
+const salaryDay = (y, m) => { const d = new Date(y, m - 1, 25).getDay(); return d === 0 ? 23 : d === 6 ? 24 : 25; };
+function bizDay(y, m, day) { const dim = new Date(y, m, 0).getDate(); const dt = new Date(y, m - 1, Math.min(day, dim)); while (dt.getDay() === 0 || dt.getDay() === 6) dt.setDate(dt.getDate() + 1); return dt; }
+const CARD_COLOR = { '농협': '#1b7a50', '롯데': '#c03a20', '신한': '#2c52cc', '삼성': '#3b4252', '현대': '#6b7280', '국민': '#a1650f', '기타': '#888' };
+function cardUse(cd, ym) {
+  const taxSplit = refList('cards').some((x) => x.card === cd.card && x.id !== cd.id && /세금/.test(x.product || ''));
+  const isTaxCard = /세금/.test(cd.product || '');
+  return txs().filter((t) => t.type === 'card' && t.card === cd.card && ymOf(t.date) === ym && (!taxSplit || (isTaxCard ? t.category === '세금' : t.category !== '세금')))
+    .reduce((a, t) => a + (+t.amount || 0), 0);
+}
+
+/* ================= calendar ================= */
+function calEvents(ym) {
+  const [y, m] = ym.split('-').map(Number); const c = cfg(); const ev = []; const dim = new Date(y, m, 0).getDate();
+  const add = (date, o) => ev.push(Object.assign({ date }, o));
+  add(ym + '-' + pad(salaryDay(y, m)), { kind: 'in', label: '급여 입금', sub: '우리 통장 · 주말이면 직전 금요일', amount: c.salary_man * 1e4 });
+  refList('plan').forEach((p) => { if (!p.day || p.optional || /카드대금/.test(p.item)) return; add(ds(bizDay(y, m, p.day)), { kind: 'plan', label: p.item, sub: '제2계좌 이체 계획', amount: -p.man * 1e4 }); });
+  const prev = ymShift(ym, -1);
+  refList('cards').forEach((cd) => {
+    if (!cd.payDay) return; const used = cardUse(cd, prev);
+    add(ds(bizDay(y, m, cd.payDay)), { kind: 'card', label: cd.name + ' 결제', sub: (cd.product ? cd.product + ' · ' : '') + (used ? Number(prev.slice(5)) + '월 기록된 사용 기준 추정' : '기록된 사용 없음 · 금액 미정') + (cd.account ? ' · ' + cd.account : ''), amount: used ? -used : null });
+  });
+  refList('autopays').forEach((a) => { if (!a.day) return; add(ym + '-' + pad(Math.min(a.day, dim)), { kind: 'auto', label: a.name, sub: a.card + '카드 자동결제', amount: -(+a.amount || 0) }); });
+  const tax = S.data.ref.tax || {};
+  (tax.schedule || []).forEach((t) => { if (ymOf(t.date) === ym) add(t.date, { kind: 'tax', label: t.name, sub: '세금 (예정)', amount: -t.man * 1e4 }); });
+  (tax.paid || []).forEach((t) => { if (ymOf(t.date) === ym) add(t.date, { kind: 'tax', label: t.name, sub: '세금 (납부)', amount: -t.man * 1e4 }); });
+  return ev;
+}
+const KIND_CLASS = { in: 'ev-in', card: 'ev-card', auto: 'ev-auto', plan: 'ev-plan', tax: 'ev-tax', tx: 'ev-tx' };
+function renderCal() {
+  if (!S.calYm) S.calYm = monthsBack(1)[0]; if (!S.calDay) S.calDay = todayStr();
+  const ym = S.calYm; const [y, m] = ym.split('-').map(Number);
+  $('calTitle').textContent = y + '년 ' + m + '월';
+  const ev = calEvents(ym); const byDay = d3.group(ev, (e) => e.date);
+  const tx = txs().filter((t) => ymOf(t.date) === ym); const txByDay = d3.group(tx, (t) => t.date);
+  const g = $('calGrid'); g.replaceChildren();
+  ['일', '월', '화', '수', '목', '금', '토'].forEach((d, i) => g.append(h('div', { class: 'dow' + (i === 0 ? ' sun' : i === 6 ? ' sat' : ''), text: d })));
+  const first = new Date(y, m - 1, 1).getDay(); const dim = new Date(y, m, 0).getDate();
+  for (let i = 0; i < first; i++) g.append(h('div'));
+  for (let d = 1; d <= dim; d++) {
+    const date = ym + '-' + pad(d); const es = byDay.get(date) || []; const ts = txByDay.get(date) || []; const dow = new Date(y, m - 1, d).getDay();
+    const kinds = [...new Set(es.map((e) => e.kind))]; if (ts.length) kinds.push('tx');
+    const out = d3.sum(es.filter((e) => e.amount < 0), (e) => e.amount);
+    const btn = h('button', { type: 'button', class: 'day-c' + (date === todayStr() ? ' today' : '') + (date === S.calDay ? ' sel' : ''), 'aria-label': m + '월 ' + d + '일, 일정 ' + es.length + '건, 거래 ' + ts.length + '건', onclick: () => { S.calDay = date; renderCal(); } },
+      h('span', { class: 'dnum' + (dow === 0 ? ' sun' : dow === 6 ? ' sat' : ''), text: d }),
+      h('span', { class: 'dots' }, kinds.map((k) => h('i', { class: KIND_CLASS[k] }))),
+      out ? h('span', { class: 'damt', text: man(out) }) : null);
+    g.append(btn);
+  }
+  const sel = S.calDay; const [sy, sm, sd] = sel.split('-').map(Number);
+  $('dayTitle').textContent = (ymOf(sel) === ym ? sm + '월 ' + sd + '일' : sel) + ' 일정과 거래';
+  const list = $('dayList'); list.replaceChildren();
+  const selEv = ymOf(sel) === ym ? (byDay.get(sel) || []) : calEvents(ymOf(sel)).filter((e) => e.date === sel);
+  const selTx = txs().filter((t) => t.date === sel).sort(txSort);
+  if (!selEv.length && !selTx.length) list.append(h('p', { class: 'empty', text: '이 날은 일정이나 기록된 거래가 없습니다.' }));
+  selEv.forEach((e) => list.append(h('div', { class: 'ev' }, h('i', { class: KIND_CLASS[e.kind] }), h('span', { class: 't' }, e.label, h('small', { text: e.sub })), h('span', { class: 'a', text: e.amount == null ? '미정' : (e.amount > 0 ? '+' : '') + won(e.amount) + '원' }))));
+  selTx.forEach((t) => list.append(h('div', { class: 'ev' }, h('i', { class: 'ev-tx' }), h('span', { class: 't' }, t.desc || '(내용 없음)', h('small', { text: [t.time, t.type === 'card' ? t.card + '카드' : t.account + ' 통장', '기록된 거래'].filter(Boolean).join(' · ') })), h('span', { class: 'a', text: (t.type === 'bank' && t.amount > 0 ? '+' : '') + won(t.amount) + '원' }))));
+  $('calSumTitle').textContent = m + '월 예정 합계';
+  const sumK = (k) => d3.sum(ev.filter((e) => e.kind === k && e.amount != null), (e) => e.amount);
+  $('calSum').replaceChildren(...[['급여', sumK('in')], ['이체·고정', sumK('plan')], ['카드 결제 (추정)', sumK('card')], ['자동결제', sumK('auto')], ['세금', sumK('tax')]]
+    .map(([k, v]) => h('div', {}, h('span', { class: 'sub', text: k }), h('b', { text: (v > 0 ? '+' : '') + man(v) + '만' }))));
+}
+$('calPrev').addEventListener('click', () => { S.calYm = ymShift(S.calYm, -1); S.calDay = S.calYm + '-01'; renderCal(); });
+$('calNext').addEventListener('click', () => { S.calYm = ymShift(S.calYm, 1); S.calDay = S.calYm + '-01'; renderCal(); });
+
+/* ================= cards ================= */
+function renderCards() {
+  const g = $('cardGrid'); g.replaceChildren(); const ym = monthsBack(1)[0]; const prev = ymShift(ym, -1);
+  const cards = refList('cards');
+  if (!cards.length) { g.append(h('p', { class: 'empty', text: '카드 정보가 없습니다.' })); }
+  cards.forEach((cd, idx) => {
+    const used = cardUse(cd, ym) / 1e4, usedPrev = cardUse(cd, prev) / 1e4;
+    const lim = /세금/.test(cd.product || '') ? null : refList('limits').find((l) => (l.members || []).includes(cd.card));
+    const aps = /세금/.test(cd.product || '') ? [] : refList('autopays').filter((a) => a.card === cd.card); const apSum = d3.sum(aps, (a) => +a.amount) / 1e4;
+    const box = h('div', { class: 'cc' }); box.style.setProperty('--cc', CARD_COLOR[cd.card] || 'var(--accent)');
+    box.append(h('div', { class: 'cc-top' }, h('div', {}, h('b', { text: cd.name }), h('small', { text: cd.product || '' })),
+      h('button', { class: 'btn small ghost', type: 'button', text: S.cardEdit === cd.id ? '닫기' : '편집', onclick: () => { S.cardEdit = S.cardEdit === cd.id ? null : cd.id; renderCards(); } })));
+    box.append(h('div', { class: 'cc-grid' },
+      h('div', {}, h('span', { text: '결제일' }), h('b', { text: cd.payDay ? '매월 ' + cd.payDay + '일' : '—' })),
+      h('div', {}, h('span', { text: '결제계좌' }), h('b', { text: cd.account || '—' })),
+      h('div', {}, h('span', { text: Number(ym.slice(5)) + '월 사용 (기록)' }), h('b', { text: used.toFixed(1) + '만' + (lim ? ' / ' + lim.cap_man + '만' : '') })),
+      h('div', {}, h('span', { text: Number(prev.slice(5)) + '월 사용 (기록)' }), h('b', { text: usedPrev.toFixed(1) + '만' })),
+      h('div', {}, h('span', { text: '자동결제' }), h('b', { text: aps.length ? aps.length + '건 · ' + apSum.toFixed(1) + '만' : '없음' })),
+      h('div', {}, h('span', { text: '연회비' }), h('b', { text: cd.annualFee ? won(cd.annualFee) + '원' : '—' }))));
+    if (lim && lim.target_man > 0) {
+      const p = used / lim.target_man * 100; const bi = h('i', { class: p >= 100 ? '' : 'warn' }); bi.style.width = Math.min(100, p) + '%';
+      box.append(h('div', {}, h('span', { class: 'sub', text: '실적 목표 ' + lim.target_man + '만 대비 ' + Math.round(p) + '%' }), h('div', { class: 'bar' }, bi)));
+    }
+    if (cd.benefit) box.append(h('p', {}, h('b', { text: '혜택 · 조건 ' }), cd.benefit));
+    if (cd.memo) box.append(h('p', { class: 'sub', text: cd.memo }));
+    if (S.cardEdit === cd.id) {
+      const f = (label, key, type) => h('label', { class: 'fld' }, label, h('input', { type: type || 'text', value: cd[key] == null ? '' : cd[key], 'data-k': key }));
+      const form = h('form', { class: 'edit', onsubmit: async (e) => {
+        e.preventDefault(); const next = Object.assign({}, cd);
+        form.querySelectorAll('[data-k]').forEach((inp) => { const k = inp.dataset.k; next[k] = k === 'payDay' || k === 'annualFee' ? (Number(toNum(inp.value)) || 0) : inp.value.trim(); });
+        const list = refList('cards').slice(); list[idx] = next; S.cardEdit = null; await store.setRef('cards', list); toast('카드 정보를 저장했습니다.');
+      } }, f('이름', 'name'), f('상품명', 'product'), f('결제일 (일)', 'payDay', 'number'), f('결제계좌', 'account'), f('혜택 · 실적 조건', 'benefit'), f('연회비 (원)', 'annualFee'), f('메모', 'memo'),
+        h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'submit', text: '저장' }),
+          h('button', { class: 'btn ghost danger', type: 'button', text: S.armed === 'cd' + cd.id ? '삭제 확인' : '카드 삭제', onclick: async () => { if (S.armed !== 'cd' + cd.id) { S.armed = 'cd' + cd.id; renderCards(); return; } S.armed = null; S.cardEdit = null; await store.setRef('cards', refList('cards').filter((x) => x.id !== cd.id)); } })));
+      box.append(form);
+    }
+    g.append(box);
+  });
+  g.append(h('button', { class: 'btn', type: 'button', text: '+ 카드 추가', onclick: async () => { const id = 'c' + uid(); await store.setRef('cards', refList('cards').concat([{ id, card: '기타', name: '새 카드', product: '', payDay: 14, account: '', benefit: '', annualFee: 0, memo: '' }])); S.cardEdit = id; renderCards(); } }));
+  // auto-pays
+  const all = refList('autopays'); const order = all.map((a, i) => ({ a, i })).sort((x, y) => (x.a.card === y.a.card ? (x.a.day || 0) - (y.a.day || 0) : CARDS.indexOf(x.a.card) - CARDS.indexOf(y.a.card)));
+  const groups = d3.rollups(all, (v) => d3.sum(v, (x) => +x.amount), (x) => x.card);
+  $('autoPays').replaceChildren(h('thead', {}, h('tr', {}, h('th', { text: '카드' }), h('th', { text: '항목' }), h('th', { class: 'n', text: '결제일' }), h('th', { class: 'n', text: '월(원)' }), h('th'))),
+    h('tbody', {}, order.map(({ a, i }) => h('tr', {}, h('td', { text: a.card }), h('td', { text: a.name }), h('td', { class: 'n', text: a.day ? a.day + '일' : '' }), h('td', { class: 'n', text: won(+a.amount) }),
+      h('td', { class: 'n' }, h('button', { class: 'btn small ghost danger', type: 'button', text: S.armed === 'ap' + i ? '확인' : '삭제', onclick: async () => { if (S.armed !== 'ap' + i) { S.armed = 'ap' + i; renderCards(); return; } S.armed = null; await store.setRef('autopays', all.filter((_, j) => j !== i)); } }))))),
+    h('tfoot', {}, h('tr', {}, h('td', { text: '합계' }), h('td', { text: groups.map(([k, v]) => k + ' ' + (v / 1e4).toFixed(1) + '만').join(' · ') }), h('td'), h('td', { class: 'n', text: won(d3.sum(all, (x) => +x.amount)) }), h('td'))));
+  const sel = $('apCard'); if (!sel.options.length) CARDS.forEach((k) => sel.append(h('option', { value: k, text: k })));
+}
+$('apForm').addEventListener('submit', async (e) => {
+  e.preventDefault(); const amt = toNum($('apAmt').value); const day = Number($('apDay').value);
+  if (!Number.isFinite(amt) || amt <= 0 || !(day >= 1 && day <= 31) || !$('apName').value.trim()) { toast('항목, 결제일, 금액을 확인하세요.'); return; }
+  await store.setRef('autopays', refList('autopays').concat([{ card: $('apCard').value, name: $('apName').value.trim(), amount: Math.round(amt), day }]));
+  $('apName').value = ''; $('apAmt').value = ''; $('apDay').value = ''; toast('자동결제를 추가했습니다.');
+});
+
+/* ================= tax ================= */
+function depositsBetween(from, to) {
+  // 매달 10일 적립 기준: from(제외)~to(포함) 사이 10일의 개수
+  const a = new Date(from + 'T00:00:00'), b = new Date(to + 'T00:00:00'); let n = 0;
+  const d = new Date(a.getFullYear(), a.getMonth(), 10); if (d <= a) d.setMonth(d.getMonth() + 1);
+  while (d <= b && n < 240) { n++; d.setMonth(d.getMonth() + 1); }
+  return n;
+}
+function renderTax() {
+  const tax = S.data.ref.tax || {}; const today = todayStr(); const year = today.slice(0, 4);
+  const paid = (tax.paid || []).map((p) => Object.assign({}, p));
+  const lastPaid = paid.reduce((a, p) => (p.date > a ? p.date : a), '0000');
+  txs().filter((t) => t.category === '세금' && t.date > lastPaid).forEach((t) => paid.push({ date: t.date, name: (t.desc || '세금') + ' (기록)', man: Math.abs(+t.amount) / 1e4 }));
+  paid.sort((a, b) => (a.date < b.date ? 1 : -1));
+  const sched = (tax.schedule || []).map((s, i) => Object.assign({ i }, s)).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const future = sched.filter((s) => s.date >= today);
+  const yearEnd = ds(new Date(+today.slice(0, 4) + 1, +today.slice(5, 7) - 1, +today.slice(8)));
+  const next12 = future.filter((s) => s.date <= yearEnd); const monthly = +tax.monthly_man || 0;
+  const reserve = tax.reserve_man == null || tax.reserve_man === '' ? null : +tax.reserve_man; const base = tax.reserveAt || today;
+  let cum = 0; let shortAt = null;
+  const proj = sched.map((s) => {
+    if (s.date < today || reserve == null) return Object.assign({ left: null }, s);
+    cum += +s.man; const left = reserve + monthly * depositsBetween(base, s.date) - cum; if (left < 0 && !shortAt) shortAt = s.date; return Object.assign({ left }, s);
+  });
+  const k = $('taxKpis'); k.replaceChildren();
+  const kpi = (l, v, unit, s, cls) => k.append(h('div', { class: 'kpi' }, h('span', { class: 'l', text: l }), h('span', { class: 'v' }, v, unit ? h('small', { text: unit }) : null), h('span', { class: 's' + (cls ? ' ' + cls : ''), text: s })));
+  kpi(year + '년 납부', d3.sum(paid.filter((p) => p.date.startsWith(year)), (p) => +p.man).toFixed(1), '만 원', paid.filter((p) => p.date.startsWith(year)).length + '건');
+  const nx = future[0]; kpi('다음 납부', nx ? (+nx.man).toFixed(1) : '—', nx ? '만 원' : '', nx ? nx.date + ' · ' + nx.name : '예정 없음');
+  kpi('12개월 예정', d3.sum(next12, (s) => +s.man).toFixed(1), '만 원', '적립 ' + (monthly * 12) + '만 원 대비 ' + (monthly * 12 - d3.sum(next12, (s) => +s.man) >= 0 ? '여유 ' : '부족 ') + Math.abs(monthly * 12 - d3.sum(next12, (s) => +s.man)).toFixed(1) + '만', monthly * 12 >= d3.sum(next12, (s) => +s.man) ? 'ok' : 'bad');
+  kpi('세금적립 잔액', reserve == null ? '—' : reserve.toFixed(0), reserve == null ? '' : '만 원', reserve == null ? '잔액을 입력하세요' : shortAt ? shortAt + ' 납부 때 부족' : '예정 세금 모두 충당 가능', reserve == null ? '' : shortAt ? 'bad' : 'ok');
+  if (document.activeElement !== $('taxRes')) $('taxRes').value = reserve == null ? '' : reserve;
+  if (document.activeElement !== $('taxMon')) $('taxMon').value = monthly || '';
+  $('taxResNote').textContent = reserve == null ? '기업·하나 세금적립 통장의 현재 잔액을 넣으면 앞으로 세금을 낼 수 있는지 계산합니다.' : (tax.reserveAt || '') + ' 입력 기준 잔액 ' + reserve + '만 원, 매달 10일 ' + monthly + '만 원 적립으로 계산합니다.';
+  $('taxSched').replaceChildren(h('thead', {}, h('tr', {}, h('th', { text: '납부일' }), h('th', { text: '항목' }), h('th', { class: 'n', text: '금액(만 원)' }), h('th', { class: 'n', text: '납부 후 적립 잔액' }), h('th'))),
+    h('tbody', {}, proj.map((s) => h('tr', { class: s.left != null && s.left < 0 ? 'short' : s.date < today ? 'opt' : '' }, h('td', { text: s.date }), h('td', { text: s.name }),
+      h('td', { class: 'n' }, h('input', { class: 'inl', value: s.man, inputMode: 'decimal', 'aria-label': s.name + ' 금액', onchange: async (e) => { const v = toNum(e.target.value); if (!Number.isFinite(v)) return; const list = (tax.schedule || []).slice(); list[s.i] = Object.assign({}, list[s.i], { man: v }); await store.setRef('tax', Object.assign({}, tax, { schedule: list })); toast('저장했습니다.'); } })),
+      h('td', { class: 'n', text: s.left == null ? '—' : s.left.toFixed(1) + '만' }),
+      h('td', { class: 'n' }, h('button', { class: 'btn small ghost danger', type: 'button', text: S.armed === 'tx' + s.i ? '확인' : '삭제', onclick: async () => { if (S.armed !== 'tx' + s.i) { S.armed = 'tx' + s.i; renderTax(); return; } S.armed = null; await store.setRef('tax', Object.assign({}, tax, { schedule: (tax.schedule || []).filter((_, j) => j !== s.i) })); } }))))));
+  $('taxPaid').replaceChildren(h('thead', {}, h('tr', {}, h('th', { text: '납부일' }), h('th', { text: '항목' }), h('th', { class: 'n', text: '금액(만 원)' }))),
+    h('tbody', {}, paid.map((p) => h('tr', {}, h('td', { text: p.date }), h('td', { text: p.name }), h('td', { class: 'n', text: (+p.man).toFixed(1) })))));
+}
+$('taxResForm').addEventListener('submit', async (e) => {
+  e.preventDefault(); const r = toNum($('taxRes').value); const mo = toNum($('taxMon').value); const tax = S.data.ref.tax || {};
+  await store.setRef('tax', Object.assign({}, tax, { reserve_man: Number.isFinite(r) ? r : null, reserveAt: Number.isFinite(r) ? todayStr() : null, monthly_man: Number.isFinite(mo) ? mo : (tax.monthly_man || 0) }));
+  toast('저장했습니다.');
+});
+$('taxAddForm').addEventListener('submit', async (e) => {
+  e.preventDefault(); const v = toNum($('taxAmt').value); if (!Number.isFinite(v) || !$('taxDate').value || !$('taxName').value.trim()) { toast('납부일, 항목, 금액을 확인하세요.'); return; }
+  const tax = S.data.ref.tax || {}; await store.setRef('tax', Object.assign({}, tax, { schedule: (tax.schedule || []).concat([{ date: $('taxDate').value, name: $('taxName').value.trim(), man: v }]) }));
+  $('taxName').value = ''; $('taxAmt').value = ''; toast('추가했습니다.');
+});
+
 /* ================= render all ================= */
 let rT = 0;
 function render() {
   cancelAnimationFrame(rT);
   rT = requestAnimationFrame(() => {
     const ser = series(); const cur = ser[ser.length - 1];
-    renderTop(cur); renderKpis(ser); renderChart(ser); renderLimits(); renderFlow(); renderQueue(false); renderTx(); renderCapLog(); renderPlan(ser);
+    renderTop(cur); renderKpis(ser); renderChart(ser); renderLimits(); renderFlow(); renderQueue(false); renderTx(); renderCapLog(); renderPlan(ser); renderCal(); renderCards(); renderTax();
   });
 }
 function setTab(t) {
@@ -494,7 +671,7 @@ function setTab(t) {
 
 /* ================= events ================= */
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
-window.addEventListener('hashchange', () => { const t = location.hash.slice(1); if (['home', 'tx', 'plan'].includes(t) && t !== S.tab) setTab(t); });
+window.addEventListener('hashchange', () => { const t = location.hash.slice(1); if (TABS.includes(t) && t !== S.tab) setTab(t); });
 document.querySelectorAll('#txFilter .chip').forEach((b) => b.addEventListener('click', () => { S.txf = b.dataset.f; document.querySelectorAll('#txFilter .chip').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); renderTx(); }));
 $('surplusSel').addEventListener('change', (e) => { S.surplus = Number(e.target.value); render(); });
 ['pickFile', 'pickCam'].forEach((id) => $(id).addEventListener('change', (e) => { if (e.target.files.length) addImages(e.target.files); e.target.value = ''; }));
@@ -542,6 +719,6 @@ let rzT = 0; window.addEventListener('resize', () => { clearTimeout(rzT); rzT = 
 
 /* ================= start ================= */
 (function start() {
-  const t0 = location.hash.slice(1); setTab(['home', 'tx', 'plan'].includes(t0) ? t0 : 'home');
+  const t0 = location.hash.slice(1); setTab(TABS.includes(t0) ? t0 : 'home');
   connect();
 })();

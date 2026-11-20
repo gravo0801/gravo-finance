@@ -25,6 +25,9 @@
   <nav class="wrap tabs" role="tablist" aria-label="화면">
     <button class="tab" role="tab" data-tab="home" aria-selected="true">홈</button>
     <button class="tab" role="tab" data-tab="tx" aria-selected="false">거래</button>
+    <button class="tab" role="tab" data-tab="cal" aria-selected="false">달력</button>
+    <button class="tab" role="tab" data-tab="cards" aria-selected="false">카드</button>
+    <button class="tab" role="tab" data-tab="tax" aria-selected="false">세금</button>
     <button class="tab" role="tab" data-tab="plan" aria-selected="false">계획</button>
   </nav>
 </header>
@@ -100,6 +103,75 @@
     </div>
   </section>
 
+  <section id="cal" data-view hidden>
+    <div class="card">
+      <div class="cal-head">
+        <button class="btn small" type="button" id="calPrev" aria-label="이전 달">‹</button>
+        <h2 id="calTitle">—</h2>
+        <button class="btn small" type="button" id="calNext" aria-label="다음 달">›</button>
+      </div>
+      <div class="cal-legend"><span><i class="ev-in"></i>입금</span><span><i class="ev-card"></i>카드 결제</span><span><i class="ev-auto"></i>자동결제</span><span><i class="ev-plan"></i>이체·고정</span><span><i class="ev-tax"></i>세금</span><span><i class="ev-tx"></i>기록된 거래</span></div>
+      <div class="cal" id="calGrid"></div>
+    </div>
+    <div class="card">
+      <h2 id="dayTitle">—</h2>
+      <div class="list" id="dayList"></div>
+    </div>
+    <div class="card">
+      <h2 id="calSumTitle">이번 달 예정 합계</h2>
+      <div class="flow" id="calSum"></div>
+    </div>
+  </section>
+
+  <section id="cards" data-view hidden>
+    <div class="cardgrid" id="cardGrid"></div>
+    <div class="card">
+      <h2>카드 자동결제</h2>
+      <div class="scroll-x"><table class="tb" id="autoPays"></table></div>
+      <details class="more">
+        <summary>자동결제 추가</summary>
+        <form class="form" id="apForm" autocomplete="off">
+          <label class="fld">카드<select id="apCard"></select></label>
+          <label class="fld">항목<input id="apName" type="text" maxlength="40" required></label>
+          <label class="fld">결제일<input id="apDay" type="number" min="1" max="31" required></label>
+          <label class="fld">월 금액 (원)<input id="apAmt" type="text" inputmode="numeric" required></label>
+          <button class="btn primary" type="submit">추가</button>
+        </form>
+      </details>
+    </div>
+  </section>
+
+  <section id="tax" data-view hidden>
+    <div class="kpis" id="taxKpis"></div>
+    <div class="card">
+      <h2>세금적립 잔액</h2>
+      <p class="sub" id="taxResNote">기업·하나 세금적립 통장의 현재 잔액을 넣으면 앞으로 세금을 낼 수 있는지 계산합니다.</p>
+      <form class="form" id="taxResForm" autocomplete="off">
+        <label class="fld">현재 적립 잔액 (만 원)<input id="taxRes" type="text" inputmode="decimal"></label>
+        <label class="fld">매달 적립액 (만 원)<input id="taxMon" type="text" inputmode="decimal"></label>
+        <button class="btn primary" type="submit">저장</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>앞으로 낼 세금</h2>
+      <p class="sub">2026년 납부 기록을 바탕으로 한 추정입니다. 금액이 정해지면 고쳐 주세요.</p>
+      <div class="scroll-x"><table class="tb" id="taxSched"></table></div>
+      <details class="more">
+        <summary>예정 세금 추가</summary>
+        <form class="form" id="taxAddForm" autocomplete="off">
+          <label class="fld">납부일<input id="taxDate" type="date" required></label>
+          <label class="fld">항목<input id="taxName" type="text" maxlength="40" required></label>
+          <label class="fld">금액 (만 원)<input id="taxAmt" type="text" inputmode="decimal" required></label>
+          <button class="btn primary" type="submit">추가</button>
+        </form>
+      </details>
+    </div>
+    <div class="card">
+      <h2>납부 기록</h2>
+      <div class="scroll-x"><table class="tb" id="taxPaid"></table></div>
+    </div>
+  </section>
+
   <section id="plan" data-view hidden>
     <div class="card">
       <h2>마통에 남기는 금액별 완납 시기</h2>
@@ -116,10 +188,6 @@
     <div class="card">
       <h2>현금 고정비</h2>
       <div class="scroll-x"><table class="tb" id="fixCash"></table></div>
-    </div>
-    <div class="card">
-      <h2>카드 자동결제</h2>
-      <div class="scroll-x"><table class="tb" id="autoPays"></table></div>
     </div>
     <div class="card">
       <h2>주담대</h2>
