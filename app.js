@@ -630,7 +630,7 @@ const ds = (dt) => dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' + pad(d
 const ymShift = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
 const salaryDay = (y, m) => { const d = new Date(y, m - 1, 25).getDay(); return d === 0 ? 23 : d === 6 ? 24 : 25; };
 function bizDay(y, m, day) { const dim = new Date(y, m, 0).getDate(); const dt = new Date(y, m - 1, Math.min(day, dim)); while (dt.getDay() === 0 || dt.getDay() === 6) dt.setDate(dt.getDate() + 1); return dt; }
-const CARD_COLOR = { '농협': '#1b7a50', '롯데': '#c03a20', '신한': '#2c52cc', '삼성': '#3b4252', '현대': '#6b7280', '국민': '#a1650f', '기타': '#888' };
+const CARD_COLOR = { '농협': '#1a6b45', '롯데': '#a33b2b', '신한': '#1d4e89', '삼성': '#3a4150', '현대': '#5c6570', '국민': '#8a5a12', '기타': '#6e655b' };
 function cardUse(cd, ym) {
   const taxSplit = refList('cards').some((x) => x.card === cd.card && x.id !== cd.id && /세금/.test(x.product || ''));
   const isTaxCard = /세금/.test(cd.product || '');
