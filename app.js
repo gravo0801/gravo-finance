@@ -279,7 +279,7 @@ function fixDate(s, today) {
   return ds;
 }
 const fixTime = (t) => { const m = String(t || '').match(/(\d{1,2})\s*[:시]\s*(\d{2})/); return m ? pad(+m[1]) + ':' + m[2] : ''; };
-function normCard(c) { const s = String(c || ''); if (!s || s === 'null') return null; if (/농협|NH|올바른/i.test(s)) return '농협'; if (/롯데|KT|SKYPASS/i.test(s)) return '롯데'; if (/신한|네이버/.test(s)) return '신한'; if (/삼성/.test(s)) return '삼성'; if (/현대|코스트코/.test(s)) return '현대'; if (/국민|KB/i.test(s)) return '국민'; return '기타'; }
+function normCard(c) { const s = String(c || ''); if (!s || s === 'null') return null; if (/농협|NH|올바른/i.test(s)) return '농협'; if (/롯데|KT|SKYPASS|LOCA/i.test(s)) return '롯데'; if (/신한/.test(s)) return '신한'; if (/삼성/.test(s)) return '삼성'; if (/현대|코스트코/.test(s)) return '현대'; if (/국민|KB/i.test(s)) return '국민'; return '기타'; }
 const normAcct = (a) => { const s = String(a || ''); if (/우리/.test(s)) return '우리'; if (/농협|NH/i.test(s)) return '농협'; if (/신한/.test(s)) return '신한'; return s ? '기타' : '우리'; };
 function chainCheck(rows) {
   const run = (dir) => { let ok = 0, bad = 0; const res = rows.map(() => null);
@@ -297,12 +297,15 @@ function chainCheck(rows) {
 /* ================= duplicate matching ================= */
 // 캡처 행을 이미 저장된 거래와 대조합니다.
 // st: new(신규) · same(이미 있음) · upgrade(기존 행에 시각·잔액 보완) · maybe(중복 의심) · nodate(날짜 확인 필요)
-const ST_LABEL = { new: '신규', same: '이미 있음', upgrade: '보완', maybe: '의심', nodate: '날짜 확인' };
+const ST_LABEL = { new: '신규', same: '이미 있음', upgrade: '보완', maybe: '의심', nodate: '날짜 확인', skip: '제외' };
+// 카드·토스 화면의 행 종류: 결제·취소만 카드 사용으로 저장하고, 이체·입금은 통장 캡처로 기록합니다.
+const KIND_LABEL = { spend: '결제', refund: '취소·환불', own_transfer: '내 계좌 이체', transfer: '송금', income: '입금·정산', other: '기타' };
+const SPENDY = (k) => !k || k === 'spend' || k === 'refund';
 function matchRows(rows, res) {
   const bank = res.screen === 'bank'; const account = res.account || '우리';
   const pool = txs().filter((t) => (bank ? t.type === 'bank' && t.account === account : t.type === 'card' && !isSummary(t)));
-  const used = new Set(); const sum = { new: 0, same: 0, upgrade: 0, maybe: 0, nodate: 0, extra: [], gap: null };
-  rows.forEach((r) => { r.m = { st: r.date && !r.out && Number.isFinite(r.amount) ? 'new' : 'nodate' }; });
+  const used = new Set(); const sum = { new: 0, same: 0, upgrade: 0, maybe: 0, nodate: 0, skip: 0, extra: [], gap: null };
+  rows.forEach((r) => { r.m = { st: !bank && !SPENDY(r.kind) ? 'skip' : r.date && !r.out && Number.isFinite(r.amount) ? 'new' : 'nodate' }; });
   const live = rows.filter((r) => r.m.st === 'new');
   const cand = (r, f) => pool.find((t) => !used.has(t.id) && t.date === r.date && t.amount === r.amount && (bank || t.card === r.card) && f(t));
   const take = (r, t, st) => { used.add(t.id); r.m = { st, id: t.id }; };
@@ -342,10 +345,37 @@ function matchRows(rows, res) {
   return sum;
 }
 const defaultInclude = (rows) => rows.forEach((r) => { r.include = r.m.st === 'new' || r.m.st === 'upgrade'; });
-function normalize(out, today) {
+
+// 카드·토스 화면 검증: 화면에 보이는 날짜별 합계나 목록 합계와 읽은 행의 합을 비교합니다 (통장의 잔액 검증 역할).
+function cardCheck(rows, res) {
+  const out = { ok: 0, bad: 0, partial: 0, days: {}, list: null };
+  const valid = rows.filter((r) => r.date && Number.isFinite(r.amount)); const ds = valid.map((r) => r.date).sort(); const lo = ds[0], hi = ds[ds.length - 1];
+  const shown = (r) => (SPENDY(r.kind) ? -r.amount : r.amount); // 화면 표시 부호: 결제는 나간 돈
+  (res.dayTotals || []).forEach((d) => {
+    const rs = valid.filter((r) => r.date === d.date); if (!rs.length) return;
+    const inS = rs.reduce((a, r) => a + Math.max(0, shown(r)), 0), outS = rs.reduce((a, r) => a + Math.max(0, -shown(r)), 0);
+    const good = (d.in == null || Math.abs(inS - d.in) < 1) && (d.out == null || Math.abs(outS - d.out) < 1);
+    const st = good ? 'ok' : d.date === lo || d.date === hi ? 'partial' : 'bad'; out.days[d.date] = st; out[st]++;
+  });
+  if (Number.isFinite(res.listTotal)) {
+    const s = valid.filter((r) => SPENDY(r.kind)).reduce((a, r) => a + r.amount, 0);
+    out.list = Math.abs(s - res.listTotal) < 1 ? 'ok' : 'bad'; out[out.list]++;
+  }
+  return out;
+}
+// 카드 화면 자동 반영 조건: 결제 행의 모든 날짜가 합계로 확인되고 의심·날짜 확인 행이 없을 때
+function cardAutoOK(res) {
+  const ck = res.check || {}; const m = res.match || {}; const spend = res.rows.filter((r) => r.m && r.m.st !== 'skip');
+  if (!spend.length || ck.bad || m.maybe || m.nodate) return false;
+  if (ck.list === 'ok') return true;
+  return spend.every((r) => (ck.days || {})[r.date] === 'ok');
+}
+function normalize(out, today, hint) {
   const items = Array.isArray(out && out.items) ? out.items : [];
-  const screen = ['bank', 'card'].includes(out && out.screen) ? out.screen : (items.some((i) => i && i.balance != null) ? 'bank' : 'card');
-  const account = screen === 'bank' ? normAcct((out && (out.account || out.institution)) || '우리') : null;
+  const screen = ['bank', 'card', 'mixed'].includes(out && out.screen) ? out.screen : (items.some((i) => i && i.balance != null) ? 'bank' : 'card');
+  const bank = screen === 'bank';
+  const account = bank ? normAcct((out && (out.account || out.institution)) || '우리') : null;
+  const topCard = normCard(out && out.card); const rules = S.data.ref.catRules || {};
   // 날짜를 먼저 읽습니다: 화면의 날짜 범위(period)를 정하고, 거래 날짜가 범위 밖이면 확인을 요구합니다.
   const pf = fixDate(out && out.period && out.period.from, today), pt = fixDate(out && out.period && out.period.to, today);
   const rows = []; const seen = new Set();
@@ -354,23 +384,37 @@ function normalize(out, today) {
     const date = fixDate(it.date, today) || ''; const bal = it.balance == null || it.balance === '' ? null : toNum(it.balance);
     if (Number.isFinite(bal)) { const k = [date, it.time, amount, bal].join('|'); if (seen.has(k)) return; seen.add(k); } // 잔액까지 같은 행은 조각 겹침으로 본 중복
     const out_ = !!(date && pf && pt && (date < pf || date > pt));
-    const r = { include: !!date && !out_, date, time: fixTime(it.time), desc: String(it.desc || '').slice(0, 60), amount: Math.round(amount), balance: Number.isFinite(bal) ? Math.round(bal) : null,
-      card: screen === 'card' ? (normCard(it.card) || '기타') : null, category: String(it.category || '기타').slice(0, 20) };
+    let kind = null, amt = Math.round(amount), card = null;
+    if (!bank) {
+      kind = KIND_LABEL[it.kind] ? it.kind : (screen === 'card' ? (amt < 0 ? 'refund' : 'spend') : 'other');
+      if (kind === 'spend') amt = Math.abs(amt); if (kind === 'refund') amt = -Math.abs(amt); // 토스처럼 결제가 -로 보여도 결제는 +
+      if (SPENDY(kind)) { const c = normCard(it.card); card = hint || (c && c !== '기타' ? c : topCard && topCard !== '기타' ? topCard : '기타'); }
+    }
+    const desc = String(it.desc || '').slice(0, 60);
+    const r = { include: !!date && !out_, date, time: fixTime(it.time), desc, amount: amt, balance: bank && Number.isFinite(bal) ? Math.round(bal) : null,
+      card, kind, method: String(it.method || '').slice(0, 20), category: String(it.category || '기타').slice(0, 20) };
+    const rule = !bank && SPENDY(kind) ? rules[normDesc(desc).slice(0, 40)] : null;
+    if (rule) { r.category = rule; r.ruled = true; } // 사용자가 전에 고친 분류를 우선 적용
     if (out_) r.out = true; // Firestore는 undefined 값을 저장하지 못하므로 필요할 때만 넣습니다
     rows.push(r);
   });
   const ds = rows.map((r) => r.date).filter(Boolean).sort();
-  const sb = toNum(out && out.screen_balance);
-  const res = { screen, account, rows, period: { from: pf || ds[0] || null, to: pt || ds[ds.length - 1] || null }, screenBalance: Number.isFinite(sb) ? sb : null, notes: String((out && out.notes) || '').slice(0, 300) };
-  res.check = screen === 'bank' ? chainCheck(rows) : { ok: 0, bad: 0 };
+  const sb = toNum(out && out.screen_balance); const lt = toNum(out && out.list_total);
+  const dayTotals = (Array.isArray(out && out.day_totals) ? out.day_totals : []).map((d) => {
+    const date = fixDate(d && d.date, today); const i = toNum(d && d.in), o = toNum(d && d.out);
+    return date ? { date, in: Number.isFinite(i) ? Math.abs(Math.round(i)) : null, out: Number.isFinite(o) ? Math.abs(Math.round(o)) : null } : null;
+  }).filter(Boolean).slice(0, 14);
+  const res = { screen, account, card: topCard || null, hint: hint || null, rows, period: { from: pf || ds[0] || null, to: pt || ds[ds.length - 1] || null },
+    dayTotals, listTotal: Number.isFinite(lt) ? Math.round(lt) : null, screenBalance: Number.isFinite(sb) ? sb : null, notes: String((out && out.notes) || '').slice(0, 300) };
+  res.check = bank ? chainCheck(rows) : cardCheck(rows, res);
   res.match = matchRows(rows, res); defaultInclude(rows);
   return res;
 }
-async function callApi(tiles) {
+async function callApi(tiles, hint) {
   const headers = { 'Content-Type': 'application/json' };
   const pass = lsGet(LS.pass, ''); if (pass) headers['x-app-passcode'] = pass;
   const key = lsGet(LS.key, ''); if (key) headers['x-user-api-key'] = key;
-  const r = await fetch('/api/recognize', { method: 'POST', headers, body: JSON.stringify({ images: tiles, today: todayStr() }) });
+  const r = await fetch('/api/recognize', { method: 'POST', headers, body: JSON.stringify({ images: tiles, today: todayStr(), cardHint: hint || '' }) });
   let data = {}; try { data = await r.json(); } catch (e) { }
   if (!r.ok) throw new Error(data.error || ('서버 오류 (' + r.status + ')'));
   return data.result;
@@ -379,15 +423,18 @@ async function recognize(id) {
   const src = S.files[id]; if (!src) { toast('원본 이미지가 이 기기에 없습니다. 캡처를 다시 올려주세요.'); return; }
   if (S.running.has(id)) return; S.running.add(id);
   try {
+    const hint = (S.data.captures[id] || {}).cardHint || '';
     await store.setCap(id, { status: 'recognizing', error: null });
     const img = await loadImg(src); const tiles = await makeTiles(img); const today = todayStr();
-    const result = normalize(await callApi(tiles), today);
+    const result = normalize(await callApi(tiles, hint), today, hint);
     delete S.edits[id];
     await store.setCap(id, { status: result.rows.length ? 'review' : 'failed', result, error: result.rows.length ? null : '거래를 찾지 못했습니다. 거래 목록이 보이게 캡처해 주세요.', recognizedAt: new Date().toISOString() });
-    const auto = $('autoSave').checked; const m = result.match || {};
-    if (result.rows.length && auto && result.screen === 'bank' && result.check.ok > 0 && result.check.bad === 0 && result.rows.every((r) => r.balance != null) && !m.maybe && !m.nodate) {
+    const auto = $('autoSave').checked; const m = result.match || {}; const bank = result.screen === 'bank';
+    const bankOK = bank && result.check.ok > 0 && result.check.bad === 0 && result.rows.every((r) => r.balance != null) && !m.maybe && !m.nodate;
+    if (result.rows.length && auto && (bankOK || (!bank && cardAutoOK(result)))) {
       const o = await saveRows(id, result, result.rows);
-      toast(o.added + o.upgraded === 0 ? '새 거래가 없습니다. ' + (m.same || 0) + '건 모두 이미 반영되어 있습니다.' : '신규 ' + o.added + '건' + (o.upgraded ? ' · 보완 ' + o.upgraded + '건' : '') + ' 반영, 이미 있는 ' + (m.same || 0) + '건은 건너뜀 (잔액 검증 ' + result.check.ok + '곳 일치)');
+      const why = bank ? '잔액 검증 ' + result.check.ok + '곳 일치' : result.check.list === 'ok' ? '목록 합계 일치' : '날짜별 합계 일치';
+      toast(o.added + o.upgraded === 0 ? '새 거래가 없습니다. ' + (m.same || 0) + '건 모두 이미 반영되어 있습니다.' : '신규 ' + o.added + '건' + (o.upgraded ? ' · 보완 ' + o.upgraded + '건' : '') + ' 반영, 이미 있는 ' + (m.same || 0) + '건은 건너뜀 (' + why + ')');
     } else if (result.rows.length) toast(m.maybe || m.nodate ? '중복 의심 또는 날짜 확인이 필요한 행이 있습니다. 확인 후 저장하세요.' : '인식 완료. 확인 후 저장을 눌러주세요.');
   } catch (e) {
     await store.setCap(id, { status: 'failed', error: (e && e.message) || '인식하지 못했습니다.' });
@@ -396,6 +443,7 @@ async function recognize(id) {
 async function addImages(files) {
   const list = [...files].filter((f) => f && /^image\//.test(f.type));
   if (!list.length) { toast('이미지만 올릴 수 있습니다.'); return; }
+  const hint = $('capCard') ? $('capCard').value : ''; if ($('capCard')) $('capCard').value = ''; // 카드 지정은 이번 업로드에만 적용
   for (const f of list) {
     const id = uid(); const url = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); });
     const ih = hash(url.length + ':' + url); // 같은 캡처를 다시 올리면 막습니다 (인식 비용·중복 방지)
@@ -403,21 +451,31 @@ async function addImages(files) {
     if (dup) { toast('이미 올린 캡처입니다 (' + String(dup.createdAt || '').slice(0, 16).replace('T', ' ') + '). 거래 탭의 캡처 기록에서 확인하세요.'); continue; }
     S.files[id] = url;
     try { const img = await loadImg(url); const th = thumbOf(img); store.saveImg(id, th); } catch (e) { }
-    await store.setCap(id, { status: 'recognizing', createdAt: new Date().toISOString(), name: f.name || '', imgHash: ih, device: navigator.userAgent.slice(0, 60) });
+    await store.setCap(id, { status: 'recognizing', createdAt: new Date().toISOString(), name: f.name || '', imgHash: ih, cardHint: hint, device: navigator.userAgent.slice(0, 60) });
     recognize(id);
   }
 }
 
+/* ================= category learning ================= */
+// 가맹점 이름 → 분류 규칙. 확인 화면이나 거래 수정에서 사용자가 정한 분류를 기억했다가 다음 인식에 먼저 적용합니다.
+async function learnRules(list) {
+  const cur = Object.assign({}, S.data.ref.catRules || {}); let ch = false;
+  list.forEach(({ desc, category }) => { const k = normDesc(desc).slice(0, 40); if (!k || !category || category === '기타' || !CARD_CATS.includes(category)) return; if (cur[k] !== category) { delete cur[k]; cur[k] = category; ch = true; } });
+  const keys = Object.keys(cur); if (keys.length > 400) keys.slice(0, keys.length - 400).forEach((k) => { delete cur[k]; });
+  if (ch) await store.setRef('catRules', cur);
+}
+
 /* ================= save ================= */
-async function saveRows(capId, result, rows) {
+async function saveRows(capId, result, rows, opts) {
   const bank = result.screen === 'bank';
-  matchRows(rows, Object.assign({}, result, { check: bank ? chainCheck(rows) : { ok: 0, bad: 0 } })); // 저장 직전 최신 데이터로 다시 대조
-  const keep = rows.filter((r) => r.include !== false && Number.isFinite(r.amount) && r.amount !== 0 && r.date);
+  matchRows(rows, Object.assign({}, result, { check: bank ? chainCheck(rows) : cardCheck(rows, result) })); // 저장 직전 최신 데이터로 다시 대조
+  const keep = rows.filter((r) => r.include !== false && r.m.st !== 'skip' && Number.isFinite(r.amount) && r.amount !== 0 && r.date);
   const now = new Date().toISOString(); const batch = {}; const del = []; let added = 0, upgraded = 0;
   const taken = (k) => !!(batch[k] || (S.data.tx[k] && !del.includes(k)));
   keep.forEach((r, i) => {
     const t = { type: bank ? 'bank' : 'card', account: bank ? (result.account || '우리') : null, card: bank ? null : (r.card || '기타'), date: r.date, time: r.time || '', desc: r.desc || '',
       amount: r.amount, balance: bank && Number.isFinite(r.balance) ? r.balance : null, category: r.category || '기타', seq: keep.length - i, captureId: capId, source: 'capture', savedAt: now };
+    if (!bank && r.method) t.method = r.method;
     const old = r.m && r.m.st === 'upgrade' ? S.data.tx[r.m.id] : null;
     if (old) { // 시각·잔액이 비어 있던 기존 행을 채웁니다 (새 행을 더하지 않음)
       const merged = Object.assign({}, old, { time: t.time || old.time || '', balance: t.balance != null ? t.balance : (old.balance == null ? null : old.balance), desc: old.desc || t.desc,
@@ -434,6 +492,7 @@ async function saveRows(capId, result, rows) {
   await store.replaceCap(capId, { status: 'saved', savedCount: added + upgraded, savedAt: now, createdAt: prev.createdAt || now, name: prev.name || '', imgHash: prev.imgHash || null,
     result: { screen: result.screen, account: result.account || null, count: (result.rows || []).length } });
   delete S.edits[capId];
+  if (!bank && opts && opts.learn) await learnRules(keep); // 사용자가 확인하고 저장한 분류만 학습
   return { added, upgraded, skipped: (result.rows || []).length - keep.length };
 }
 
@@ -458,54 +517,85 @@ function renderQueue(force) {
   const el = $('queue'); el.replaceChildren();
   active.forEach((c) => {
     const res = c.result || {};
-    const kind = res.screen === 'bank' ? (res.account || '') + ' 통장' : res.screen === 'card' ? '카드 이용내역' : '캡처';
+    const kind = res.screen === 'bank' ? (res.account || '') + ' 통장' : res.screen === 'mixed' ? '결제·이체 혼합 내역' : res.screen === 'card' ? ((res.hint || res.card || '') ? (res.hint || res.card) + '카드 ' : '카드 ') + '이용내역' : '캡처';
     const info = h('div', { class: 'q-info' }, h('span', { class: 'q-title', text: kind + (res.rows ? ' · ' + res.rows.length + '건' : '') }), statusPill(c));
+    if (c.status === 'recognizing' && c.cardHint) info.append(h('span', { class: 'sub', text: c.cardHint + '카드로 지정됨' }));
     if (c.error) info.append(h('span', { class: 'sub', text: c.error }));
-    if (c.status === 'review' && res.screen === 'bank') info.append(h('span', { class: 'sub', text: '잔액 검증: 일치 ' + ((res.check || {}).ok || 0) + '곳, 불일치 ' + ((res.check || {}).bad || 0) + '곳' }));
-    if (res.notes) info.append(h('span', { class: 'sub', text: '메모: ' + res.notes }));
+    if (res.notes) info.append(h('details', { class: 'memo' }, h('summary', { text: '인식 메모' }), h('span', { class: 'sub', text: res.notes })));
     const acts = h('div', { class: 'row' });
     if (!S.running.has(c.id) && S.files[c.id]) acts.append(h('button', { class: 'btn small', type: 'button', text: '다시 인식', onclick: () => recognize(c.id) }));
     acts.append(h('button', { class: 'btn small ghost', type: 'button', text: '버리기', onclick: () => discard(c) }));
     const box = h('div', { class: 'q' }, h('div', { class: 'q-head' }, imgEl(c.id, 'q-thumb', '캡처', () => openViewer(c.id)), info), acts);
-    if (c.status === 'review') box.append(reviewTable(c), h('div', { class: 'row' },
-      h('button', { class: 'btn primary', type: 'button', text: '저장해서 반영', onclick: async (ev) => { ev.target.disabled = true; try { const o = await saveRows(c.id, res, editRows(c)); toast('신규 ' + o.added + '건' + (o.upgraded ? ' · 보완 ' + o.upgraded + '건' : '') + ' 반영했습니다. 제외한 ' + o.skipped + '건은 저장하지 않았습니다.'); } catch (e) { ev.target.disabled = false; toast('저장하지 못했습니다.'); } } })));
+    if (c.status === 'review') box.append(reviewTable(c));
     el.append(box);
   });
 }
+const md = (d) => (d ? Number(d.slice(5, 7)) + '/' + Number(d.slice(8)) : '');
 function reviewTable(c) {
   const res = c.result; const rows = editRows(c); const bank = res.screen === 'bank'; const tb = h('tbody'); const trs = []; const sumEl = h('div', { class: 'msum' });
-  // 입력이 바뀔 때마다 잔액 사슬과 기존 거래 대조를 다시 계산해 상태 열과 요약을 갱신합니다.
+  const saveBtn = h('button', { class: 'btn primary', type: 'button' });
+  // 입력이 바뀔 때마다 검증(잔액 사슬 또는 합계)과 기존 거래 대조를 다시 계산해 상태 열·요약·저장 버튼을 갱신합니다.
   const rematch = () => {
-    const ck = bank ? chainCheck(rows) : { ok: 0, bad: 0 }; const m = matchRows(rows, Object.assign({}, res, { check: ck }));
+    const prevSt = rows.map((r) => (r.m || {}).st);
+    const ck = bank ? chainCheck(rows) : cardCheck(rows, res); const m = matchRows(rows, Object.assign({}, res, { check: ck }));
     rows.forEach((r, i) => {
-      const tr = trs[i]; if (!tr) return; const st = (r.m || {}).st || 'new';
-      tr.className = st === 'same' ? 'dim' : ''; const e = tr.querySelector('[data-st]'); e.className = 'st ' + st; e.textContent = ST_LABEL[st];
+      const tr = trs[i]; if (!tr) return; const st = r.m.st;
+      if (prevSt[i] === 'skip' && st !== 'skip') r.include = st === 'new' || st === 'upgrade';
+      if (st === 'skip') r.include = false;
+      tr.className = (st === 'same' || st === 'skip' ? 'dim' : '') + (st === 'skip' ? ' skip' : ''); const e = tr.querySelector('[data-st]'); e.className = 'st ' + st; e.textContent = ST_LABEL[st];
+      const cb = tr.querySelector('td.ck input'); cb.checked = r.include !== false; cb.disabled = st === 'skip';
       const k = tr.querySelector('[data-chk]'); if (k) { k.className = 'chk ' + (r.chk || ''); k.textContent = r.chk === 'ok' ? '일치' : r.chk === 'bad' ? '불일치' : '—'; }
     });
     sumEl.replaceChildren();
-    if (res.period && res.period.from) sumEl.append(h('div', { class: 'sub', text: '화면 날짜 범위 ' + res.period.from + (res.period.to && res.period.to !== res.period.from ? ' ~ ' + res.period.to : '') }));
-    sumEl.append(h('div', { class: 'mline', text: ['new', 'same', 'upgrade', 'maybe', 'nodate'].filter((k) => m[k]).map((k) => ST_LABEL[k] + ' ' + m[k] + '건').join(' · ') || '거래 없음' }));
+    if (res.period && res.period.from) sumEl.append(h('div', { class: 'sub', text: '화면 날짜 ' + res.period.from + (res.period.to && res.period.to !== res.period.from ? ' ~ ' + res.period.to : '') }));
+    sumEl.append(h('div', { class: 'mline', text: ['new', 'same', 'upgrade', 'maybe', 'nodate', 'skip'].filter((k) => m[k]).map((k) => ST_LABEL[k] + ' ' + m[k]).join(' · ') || '거래 없음' }));
+    if (bank) sumEl.append(h('div', { class: 'sub ' + (ck.bad ? 'warnt' : ck.ok ? 'okt' : ''), text: '잔액 검증: 일치 ' + ck.ok + '곳, 불일치 ' + ck.bad + '곳' }));
+    else {
+      const by = (st) => Object.entries(ck.days || {}).filter(([, v]) => v === st).map(([d]) => md(d)).join(', ');
+      if (by('ok')) sumEl.append(h('div', { class: 'sub okt', text: '날짜별 합계 일치: ' + by('ok') }));
+      if (by('partial')) sumEl.append(h('div', { class: 'sub', text: '화면 끝에 걸려 일부만 보이는 날: ' + by('partial') + ' (나머지는 다음 캡처로)' }));
+      if (by('bad')) sumEl.append(h('div', { class: 'sub warnt', text: '날짜별 합계 불일치: ' + by('bad') + ' · 빠졌거나 잘못 읽은 행이 있을 수 있습니다.' }));
+      if (ck.list) sumEl.append(h('div', { class: 'sub ' + (ck.list === 'ok' ? 'okt' : 'warnt'), text: ck.list === 'ok' ? '화면 이용금액 합계와 일치합니다.' : '화면 이용금액 합계(' + won(res.listTotal) + '원)와 다릅니다. 기간이 다르거나 빠진 행이 있을 수 있습니다.' }));
+      if (!ck.ok && !ck.bad && !ck.partial) sumEl.append(h('div', { class: 'sub', text: '화면에 합계가 없어 자동 검증을 못 했습니다. 금액을 한 번 확인해 주세요.' }));
+    }
+    if (m.skip) sumEl.append(h('div', { class: 'sub', text: '결제가 아닌 행(이체·송금·입금) ' + m.skip + '건은 카드 사용으로 저장하지 않습니다. 실제 결제면 종류를 "결제"로 바꾸세요.' }));
+    const ruled = rows.filter((r) => r.ruled && r.m.st !== 'skip').length; if (ruled) sumEl.append(h('div', { class: 'sub', text: '전에 고친 분류를 ' + ruled + '건에 적용했습니다.' }));
     if (m.upgrade) sumEl.append(h('div', { class: 'sub', text: '보완: 시각·잔액이 비어 있던 기존 거래에 값을 채웁니다 (새 거래로 더하지 않음).' }));
     if (m.maybe) sumEl.append(h('div', { class: 'sub warnt', text: '의심: 날짜·금액은 같은데 잔액이나 가맹점명이 조금 다른 기존 거래가 있습니다. 같은 거래면 체크를 끄고, 다른 거래면 체크하세요.' }));
     if (m.nodate) sumEl.append(h('div', { class: 'sub warnt', text: '날짜를 읽지 못했거나 화면 날짜 범위 밖인 행이 있습니다. 날짜를 직접 고치고 체크하세요.' }));
     if (m.gap) sumEl.append(h('div', { class: 'sub ' + (m.gap.ok ? 'okt' : 'warnt'), text: m.gap.text }));
-    if (m.extra.length) sumEl.append(h('div', { class: 'sub', text: '앱에는 있는데 이 캡처에는 없는 거래 ' + m.extra.length + '건 (날짜 범위 안쪽): ' + m.extra.map((x) => x.date.slice(5) + ' ' + (x.desc || '') + ' ' + won(x.amount)).join(', ') }));
+    if (m.extra.length) sumEl.append(h('div', { class: 'sub', text: '앱에는 있는데 이 캡처에는 없는 거래 ' + m.extra.length + '건 (날짜 범위 안쪽): ' + m.extra.map((x) => md(x.date) + ' ' + (x.desc || '') + ' ' + won(x.amount)).join(', ') }));
+    const n = rows.filter((r) => r.include !== false && r.m.st !== 'skip' && r.date).length;
+    saveBtn.textContent = n ? n + '건 저장해서 반영' : '저장할 거래 없음 · 완료 처리';
   };
   rows.forEach((r) => {
     const num = (k) => k === 'amount' || k === 'balance';
-    const inp = (key, type, cls) => h('input', { type: type || 'text', class: cls || '', value: num(key) ? (r[key] == null ? '' : won(r[key])) : (r[key] || ''), inputMode: num(key) ? 'numeric' : null,
+    const inp = (key, type, cls, label) => h('input', { type: type || 'text', class: cls || '', 'aria-label': label, value: num(key) ? (r[key] == null ? '' : won(r[key])) : (r[key] || ''), inputMode: num(key) ? 'numeric' : null,
       oninput: (e) => { const v = e.target.value; if (num(key)) { const n = toNum(v); r[key] = v.trim() === '' && key === 'balance' ? null : (Number.isFinite(n) ? Math.round(n) : r[key]); } else { r[key] = v; if (key === 'date') delete r.out; } rematch(); } });
+    const amtInp = inp('amount', 'text', 'num', '금액');
     const cells = [h('td', { class: 'ck' }, h('input', { type: 'checkbox', checked: r.include !== false, 'aria-label': '저장에 포함', onchange: (e) => { r.include = e.target.checked; rematch(); } })),
-      h('td', {}, h('span', { 'data-st': '1', class: 'st new', text: '신규' })),
-      h('td', {}, inp('date', 'date')), h('td', { style: 'width:72px' }, inp('time')), h('td', {}, inp('desc')), h('td', { style: 'width:120px' }, inp('amount', 'text', 'num'))];
-    if (bank) cells.push(h('td', { style: 'width:130px' }, inp('balance', 'text', 'num')), h('td', {}, h('span', { 'data-chk': '1', class: 'chk ' + (r.chk || ''), text: r.chk === 'ok' ? '일치' : r.chk === 'bad' ? '불일치' : '—' })));
-    else cells.push(h('td', { style: 'width:88px' }, h('select', { onchange: (e) => { r.card = e.target.value; rematch(); } }, CARDS.map((k) => h('option', { value: k, text: k, selected: r.card === k })))));
-    cells.push(h('td', { style: 'width:104px' }, h('select', { onchange: (e) => { r.category = e.target.value; } }, (bank ? BANK_CATS : CARD_CATS).map((k) => h('option', { value: k, text: k, selected: r.category === k })))));
+      h('td', { class: 'stc' }, h('span', { 'data-st': '1', class: 'st new', text: '신규' })),
+      h('td', { class: 'dt' }, inp('date', 'date', '', '날짜')), h('td', { class: 'tm' }, inp('time', 'text', '', '시각')), h('td', { class: 'ds' }, inp('desc', 'text', '', '내용')), h('td', { class: 'am' }, amtInp)];
+    if (bank) cells.push(h('td', { class: 'bl' }, inp('balance', 'text', 'num', '잔액')), h('td', { class: 'vc' }, h('span', { 'data-chk': '1', class: 'chk ' + (r.chk || ''), text: r.chk === 'ok' ? '일치' : r.chk === 'bad' ? '불일치' : '—' })));
+    else {
+      const cardSel = h('select', { 'aria-label': '카드', onchange: (e) => { r.card = e.target.value; rematch(); } }, CARDS.map((k) => h('option', { value: k, text: k, selected: (r.card || '기타') === k })));
+      cells.push(h('td', { class: 'cd' }, cardSel), h('td', { class: 'kd' }, h('select', { 'aria-label': '종류', onchange: (e) => {
+        r.kind = e.target.value; if (r.kind === 'spend') r.amount = Math.abs(r.amount); if (r.kind === 'refund') r.amount = -Math.abs(r.amount);
+        if (SPENDY(r.kind) && !r.card) { r.card = '기타'; cardSel.value = '기타'; } amtInp.value = won(r.amount); rematch(); } }, Object.entries(KIND_LABEL).map(([k, v]) => h('option', { value: k, text: v, selected: (r.kind || 'spend') === k })))));
+    }
+    cells.push(h('td', { class: 'ct' }, h('select', { 'aria-label': '분류', class: r.ruled ? 'ruled' : '', onchange: (e) => { r.category = e.target.value; r.ruled = false; e.target.className = ''; } }, (bank ? BANK_CATS : CARD_CATS).map((k) => h('option', { value: k, text: k, selected: r.category === k })))));
     const tr = h('tr', {}, cells); trs.push(tr); tb.append(tr);
   });
   rematch();
-  const head = ['', '상태', '날짜', '시각', '내용', bank ? '금액(입금+)' : '금액(결제+)'].concat(bank ? ['잔액', '검증'] : ['카드']).concat(['분류']);
-  return h('div', {}, sumEl, h('div', { class: 'scroll-x' }, h('table', { class: 'rv' }, h('thead', {}, h('tr', {}, head.map((t) => h('th', { text: t })))), tb)));
+  const head = ['', '상태', '날짜', '시각', '내용', bank ? '금액(입금+)' : '금액(결제+)'].concat(bank ? ['잔액', '검증'] : ['카드', '종류']).concat(['분류']);
+  const tools = bank ? null : h('div', { class: 'row rvtools' }, h('label', { class: 'fld inline' }, '카드 한꺼번에 바꾸기',
+    h('select', { onchange: (e) => { const v = e.target.value; if (!v) return; rows.forEach((r) => { if (SPENDY(r.kind)) r.card = v; }); renderQueue(true); toast('결제 행의 카드를 ' + v + '로 바꿨습니다.'); } }, [h('option', { value: '', text: '선택' })].concat(CARDS.map((k) => h('option', { value: k, text: k }))))));
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    try { const o = await saveRows(c.id, res, rows, { learn: true }); toast('신규 ' + o.added + '건' + (o.upgraded ? ' · 보완 ' + o.upgraded + '건' : '') + ' 반영했습니다. 제외한 ' + o.skipped + '건은 저장하지 않았습니다.'); }
+    catch (e) { saveBtn.disabled = false; toast('저장하지 못했습니다.'); }
+  });
+  return h('div', { class: 'rvwrap' }, sumEl, tools, h('div', { class: 'scroll-x' }, h('table', { class: 'rv ' + (bank ? 'rv-bank' : 'rv-card') }, h('thead', {}, h('tr', {}, head.map((t) => h('th', { text: t })))), tb)), h('div', { class: 'savebar' }, saveBtn));
 }
 // 캡처 한 장으로 반영된 거래를 한 번에 되돌립니다 (보완했던 기존 행은 원래 값으로 복원, 직접 수정한 행은 그대로 둠)
 async function undoCap(c) {
@@ -542,6 +632,7 @@ function txEditor(t) {
     Object.assign(n, { date: date.value, time: fixTime(time.value), desc: desc.value.trim(), amount: Math.round(a), category: cat.value, edited: true });
     if (bank) { const b = toNum(bal.value); n.balance = Number.isFinite(b) ? Math.round(b) : null; n.account = who.value; } else n.card = who.value;
     if (t.prev) n.prev = null;
+    if (n.type === 'card' && n.category !== t.category) learnRules([{ desc: n.desc, category: n.category }]);
     const nk = uniqueKey(n, (k) => !!S.data.tx[k] && k !== t.id);
     S.editId = null;
     if (nk === t.id) await store.setTx(nk, n); else { await store.setTx(nk, n); await store.delTx(t.id); }

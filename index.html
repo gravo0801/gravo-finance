@@ -44,9 +44,10 @@
         <label class="btn" for="pickCam">카메라</label>
         <input id="pickFile" type="file" accept="image/*" multiple hidden>
         <input id="pickCam" type="file" accept="image/*" capture="environment" hidden>
-        <label class="switch"><input type="checkbox" id="autoSave" checked> 잔액 검증이 맞으면 바로 반영</label>
+        <label class="pick"><span>카드</span><select id="capCard" aria-label="이번 캡처의 카드 지정"><option value="">자동 인식</option><option>농협</option><option>롯데</option><option>신한</option><option>삼성</option><option>현대</option><option>국민</option></select></label>
+        <label class="switch"><input type="checkbox" id="autoSave" checked> 검증이 맞으면 바로 반영</label>
       </div>
-      <p class="hint" id="pasteHint">통장·카드 화면 캡처를 올리면 금액과 날짜를 읽어 자동으로 계산합니다. 한 장에 10~30초쯤 걸립니다.</p>
+      <p class="hint" id="pasteHint">통장·카드·토스 화면 캡처를 올리면 날짜와 금액을 읽어 자동으로 계산합니다. 카드사가 화면에 안 보이면 위에서 카드를 골라 주세요. 한 장에 10~30초쯤 걸립니다.</p>
       <div id="queue" class="list" style="gap:10px"></div>
     </div>
 
