@@ -431,6 +431,7 @@ function cardAutoOK(res) {
   if (ck.list === 'ok') return true;
   return spend.every((r) => (ck.days || {})[r.date] === 'ok');
 }
+const TAX_RE = /국세|지방세|세금|ETAX|이택스|위택스|홈택스|국세청|종합소득세|부가가치세|부가세|재산세|자동차세|주민세|취득세|지방소득세|소득세|법인세|과태료/i;
 function normalize(out, today, hint) {
   const items = Array.isArray(out && out.items) ? out.items : [];
   const screen = ['bank', 'card', 'mixed'].includes(out && out.screen) ? out.screen : (items.some((i) => i && i.balance != null) ? 'bank' : 'card');
@@ -457,6 +458,8 @@ function normalize(out, today, hint) {
     if (card) r.cardId = (hv.card && hv.card === card && hv.id) || kwCardId(card, it.product) || kwCardId(card, out && out.product) || '';
     const rule = !bank && SPENDY(kind) ? rules[normDesc(desc).slice(0, 40)] : null;
     if (rule) { r.category = rule; r.ruled = true; } // 사용자가 전에 고친 분류를 우선 적용
+    // 세금 낱말이 보이는 출금·결제는 모델이 다른 분류를 줘도 세금으로 보정 (사용자가 직접 고친 분류는 존중)
+    if (!r.ruled && r.category !== '세금' && TAX_RE.test(desc) && (bank ? amt < 0 : kind === 'spend')) r.category = '세금';
     if (card) r.cardId = r.cardId || defaultCardId(card, r.category);
     if (out_) r.out = true; // Firestore는 undefined 값을 저장하지 못하므로 필요할 때만 넣습니다
     rows.push(r);

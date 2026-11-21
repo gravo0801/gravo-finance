@@ -46,6 +46,7 @@ function buildPrompt(today, n, hint, product) {
         '- 카드는 정식 명칭으로 구분합니다: 올바른SAFE카드(농협) / KT DC PLUS 카드, SKYPASS 롯데카드 세금전용(롯데) / 네이버페이 신한카드(신한) / THE Platinum Card, 삼성카드 & MILEAGE PLATINUM 스카이패스(삼성) / 코스트코 리워드 현대카드, 대한항공카드 070(현대) / ROVL 시그니쳐 스카이패스 카드(국민). 화면에 카드 이름·상품명이 보이면 각 행(또는 화면 전체)의 product에 보이는 그대로 짧게 적으세요. 보이지 않으면 null.',
     '- 은행 화면의 "롯데카드(주)", "KB카드출금", "삼성카드" 같은 줄은 카드값 출금입니다. card는 null, category는 카드대금.',
     '',
+    '- 국세·지방세·ETAX·위택스·홈택스·재산세·자동차세·소득세·부가세 납부는 category를 반드시 "세금"으로 하세요. 은행 출금이든 카드 결제든 같습니다.',
     `[분류 category] bank: ${BANK_CATS.join(', ')} 중 하나. card·mixed: ${CARD_CATS.join(', ')} 중 하나(이체·입금 행은 기타).`,
     '[desc] 화면에 보이는 가맹점·거래처·적요를 그대로 짧게. 결제 수단(네이버페이 등)이 따로 보이면 method에 적으세요.',
     '',
