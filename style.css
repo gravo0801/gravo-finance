@@ -426,3 +426,60 @@ details.more summary:hover { color: var(--ink); }
 /* 좁은 화면(폴드 커버 화면)에서 표가 칸을 밀어내지 않게 */
 .q > *, .card > *, .list > * { min-width: 0; }
 body { overflow-x: clip; }
+
+/* ===== 카드 지정 · 인식 결과 (폴드 접힘/펼침 대응) ===== */
+.pick { display: inline-flex; align-items: center; gap: 4px; min-height: 42px; padding: 0 2px 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.pick span { color: var(--mute); font-size: 13px; }
+.pick select { border: 0; background: transparent; min-height: 40px; font-size: 14px; padding: 0 6px; color: var(--ink); }
+.fld.inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fld.inline select { width: auto; min-height: 36px; }
+.memo summary { font-size: 12px; color: var(--mute); cursor: pointer; }
+.memo .sub { display: block; margin-top: 4px; }
+.rvwrap { display: grid; gap: 8px; min-width: 0; }
+table.rv select.ruled { border-color: var(--accent); }
+table.rv td.vc, table.rv td.stc { white-space: nowrap; }
+table.rv td.dt { width: 120px; } table.rv td.tm { width: 58px; } table.rv td.am { width: 112px; } table.rv td.bl { width: 124px; }
+table.rv td.cd { width: 72px; } table.rv td.kd { width: 104px; } table.rv td.ct { width: 104px; }
+table.rv tr.skip td.cd > *, table.rv tr.skip td.ct > * { visibility: hidden; }
+table.rv.rv-card { min-width: 700px; }
+.savebar { position: sticky; bottom: 0; z-index: 3; margin: 2px -12px -12px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--panel); border-top: 1px solid var(--line); border-radius: 0 0 12px 12px; }
+.savebar .btn { width: 100%; }
+
+/* 접힌 폴드(커버 화면)·일반 폰: 표 대신 거래마다 카드형으로 */
+@media (max-width: 640px) {
+  table.rv, table.rv.rv-card { min-width: 0; }
+  .rvwrap .scroll-x { overflow: visible; }
+  table.rv thead { display: none; }
+  table.rv, table.rv tbody { display: block; width: 100%; }
+  table.rv tr { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); align-items: center;
+    grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "ck ds ds am" "ck dt dt stc" ". cd kd kd" ". ct ct tm"; }
+  table.rv.rv-bank tr { grid-template-areas: "ck ds ds am" "ck dt dt stc" ". tm bl bl" ". vc ct ct"; }
+  /* 제외(이체·입금) 행은 두 줄로 접고 종류만 바꿀 수 있게 */
+  table.rv tr.skip { grid-template-areas: "ck ds ds am" "ck stc kd kd"; padding: 6px 0; }
+  table.rv tr.skip td.dt, table.rv tr.skip td.tm, table.rv tr.skip td.cd, table.rv tr.skip td.ct { display: none; }
+  table.rv td.am input { font-size: 13px; padding-inline: 5px; }
+  table.rv td.stc { text-align: center; }
+  table.rv td { padding: 0; border: 0; min-width: 0; width: auto !important; }
+  table.rv td.ck { grid-area: ck; align-self: start; padding-top: 9px; }
+  table.rv td.stc { grid-area: stc; } table.rv td.dt { grid-area: dt; } table.rv td.tm { grid-area: tm; } table.rv td.ds { grid-area: ds; } table.rv td.am { grid-area: am; }
+  table.rv td.bl { grid-area: bl; } table.rv td.vc { grid-area: vc; } table.rv td.cd { grid-area: cd; } table.rv td.kd { grid-area: kd; } table.rv td.ct { grid-area: ct; }
+  table.rv input, table.rv select { min-height: 38px; font-size: 14px; }
+  table.rv td.ds input { font-weight: 600; }
+  table.rv td.dt input { padding-inline: 4px; font-size: 13px; }
+  table.rv tbody tr:hover td { background: none; }
+}
+/* 아주 좁은 커버 화면 */
+@media (max-width: 420px) {
+  .wrap { padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); }
+  .card { padding: 12px; }
+  .q { padding: 10px; }
+  .savebar { margin: 2px -10px -10px; padding-inline: 10px; }
+  .q-thumb { width: 52px; height: 68px; }
+  table.rv td.am input { font-size: 12px; padding-inline: 3px; letter-spacing: -0.02em; }
+}
+/* 펼친 폴드(안쪽 큰 화면)·태블릿: 홈 아래쪽 카드 2열 */
+@media (min-width: 760px) {
+  #home { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  #home > :nth-child(-n+3) { grid-column: 1 / -1; }
+}
