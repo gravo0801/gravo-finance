@@ -483,3 +483,69 @@ table.rv.rv-card { min-width: 700px; }
   #home { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   #home > :nth-child(-n+3) { grid-column: 1 / -1; }
 }
+
+/* ── PC·큰 모니터 ─────────────────────────────────────────────
+   폰(접힘·펼침)은 위 규칙 그대로. 1200px 이상에서만 넓히고 다단으로 배치. */
+.q-big { display: none; }
+@media (min-width: 1200px) {
+  .wrap { max-width: 1240px; padding-left: 28px; padding-right: 28px; }
+  main { padding-block: 24px 64px; gap: 20px; }
+  section[data-view] { gap: 20px; }
+  .card { padding: 20px 22px; gap: 14px; align-content: start; }
+  .card h2 { font-size: 17px; }
+  .tabs { justify-content: flex-start; gap: 8px; }
+  .tab { flex: 0 1 132px; font-size: 15px; }
+  .top-in { padding-block: 14px 6px; }
+  .brand { font-size: 19px; }
+
+  /* 홈: 위에 요약 숫자, 붙여넣기 | 잔액 추이, 카드 사용액 | 통장 흐름 */
+  #home { grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-areas: "kpi kpi kpi" "paste chart chart" "lim flow flow"; }
+  #home > :nth-child(1) { grid-area: paste; } #home > :nth-child(2) { grid-area: kpi; }
+  #home > :nth-child(3) { grid-area: chart; } #home > :nth-child(4) { grid-area: lim; } #home > :nth-child(5) { grid-area: flow; }
+  #home > :nth-child(1) .paste { min-height: 220px; }
+  /* 인식 결과를 검수할 때는 붙여넣기 칸을 전체 폭으로 */
+  #home:has(#queue .q) { grid-template-areas: "kpi kpi kpi" "paste paste paste" "chart chart chart" "lim flow flow"; }
+  #home:has(#queue .q) > :nth-child(1) .paste { min-height: 132px; }
+
+  /* 검수: 왼쪽 원본 캡처(스크롤), 오른쪽 인식 표 */
+  .q.has-rv { grid-template-columns: 300px minmax(0, 1fr); column-gap: 18px;
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas: "big head" "big acts" "big rv"; align-items: start; align-content: start; }
+  .q.has-rv > .q-head { grid-area: head; } .q.has-rv > .row { grid-area: acts; } .q.has-rv > .rvwrap { grid-area: rv; }
+  .q.has-rv .q-thumb { display: none; }
+  .q.has-rv > .q-big { display: block; grid-area: big; position: sticky; top: 120px; max-height: calc(100vh - 140px); overflow: auto;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--soft); }
+  .q-big img { display: block; width: 100%; height: auto; cursor: zoom-in; }
+
+  /* 달력: 왼쪽 달력+월 합계, 오른쪽 선택한 날 (스크롤해도 따라옴) */
+  #cal { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); grid-template-areas: "grid day" "sum day"; align-items: start; }
+  #cal > :nth-child(1) { grid-area: grid; } #cal > :nth-child(2) { grid-area: day; position: sticky; top: 120px; max-height: calc(100vh - 140px); overflow: auto; }
+  #cal > :nth-child(3) { grid-area: sum; }
+  .cal { gap: 5px; }
+  .cal button.day-c { min-height: 92px; padding: 7px 8px; gap: 5px; }
+  .cal .dnum { font-size: 14px; } .cal .dow { font-size: 12px; }
+  .cal .dots i { width: 7px; height: 7px; }
+  .cal .damt { font-size: 12px; }
+  .cal-legend { font-size: 12px; }
+
+  /* 거래: 왼쪽 목록, 오른쪽 직접 입력·캡처 기록 */
+  #tx { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); grid-template-rows: auto 1fr; grid-template-areas: "list form" "list log"; align-items: start; }
+  #tx > :nth-child(1) { grid-area: list; } #tx > :nth-child(2) { grid-area: form; } #tx > :nth-child(3) { grid-area: log; }
+
+  /* 세금·계획: 2단 */
+  #tax { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); grid-template-rows: auto auto 1fr; align-items: start;
+    grid-template-areas: "kpi kpi" "sched res" "sched paid"; }
+  #tax > :nth-child(1) { grid-area: kpi; } #tax > :nth-child(2) { grid-area: res; } #tax > :nth-child(3) { grid-area: sched; } #tax > :nth-child(4) { grid-area: paid; }
+  #plan { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  #plan > :nth-child(1), #plan > details { grid-column: 1 / -1; }
+  #cards > .card { grid-column: 1 / -1; }
+}
+@media (min-width: 1600px) {
+  .wrap { max-width: 1440px; }
+  .cal button.day-c { min-height: 104px; }
+  .q.has-rv { grid-template-columns: 360px minmax(0, 1fr); }
+}
+@media (hover: hover) and (min-width: 1200px) {
+  #txList > *:hover, #dayList > *:hover { background: var(--soft); }
+}
