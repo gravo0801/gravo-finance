@@ -11,12 +11,15 @@ const lsSet = (k, v) => { try { if (v == null || v === '') localStorage.removeIt
 
 const S = {
   data: { ref: {}, tx: {}, captures: {} }, fb: null, docRef: null, code: lsGet(LS.code, 'gravo2026'), sync: 'off', ready: false,
-  files: {}, edits: {}, ctl: {}, editId: null, running: new Set(), thumbs: {}, tab: 'home', txf: 'all', armed: null, view: null, surplus: null, qsig: '', calYm: null, calDay: null, cardEdit: null, ensured: false,
+  files: {}, edits: {}, ctl: {}, editId: null, running: new Set(), thumbs: {}, tab: 'home', txf: 'all', armed: null, view: null, surplus: null, qsig: '', calYm: null, calDay: null, cardEdit: null, ensured: false, memoId: null, txq: '',
 };
 const TABS = ['home', 'tx', 'cal', 'cards', 'tax', 'plan'];
 const CARDS = ['농협', '롯데', '신한', '삼성', '현대', '국민', '기타'];
 const CARD_CODE = { '농협': 'nh', '롯데': 'lotte', '신한': 'shinhan', '삼성': 'samsung', '현대': 'hyundai', '국민': 'kb', '기타': 'etc' };
 const ACCT_CODE = { '우리': 'woori', '농협': 'nh', '신한': 'shinhan', '기타': 'etc' };
+const ACCT_LABEL = { '우리': '우리 통장', '농협': '농협 통장', '신한': '신한 FNA 통장', '기타': '기타 통장' };
+const ACCTS = ['우리', '농협', '신한', '기타'];
+const acctLabel = (a) => ACCT_LABEL[a] || ((a || '') + ' 통장');
 const BANK_CATS = ['급여', '카드대금', '본인이체', '투자·증권', '적금·저축', '대출·이자', '세금', '기타'];
 const CARD_CATS = ['외식·카페', '마트·생활', '쇼핑', '교통·차량', '의료', '통신·구독', '보험', '세금', '기타'];
 const $ = (id) => document.getElementById(id);
@@ -179,9 +182,41 @@ function cardTxs() {
   const all = txs().filter((t) => t.type === 'card'); const detail = new Set(all.filter((t) => !isSummary(t)).map((t) => t.card + '|' + ymOf(t.date)));
   return all.filter((t) => !isSummary(t) || !detail.has(t.card + '|' + ymOf(t.date)));
 }
-function cardUsed(members, months) { return cardTxs().filter((t) => members.includes(t.card) && months.includes(ymOf(t.date))).reduce((a, t) => a + (+t.amount || 0), 0); }
+function cardUsed(members, months, ids) { return cardTxs().filter((t) => members.includes(t.card) && months.includes(ymOf(t.date)) && (!ids || ids.includes(cardIdOf(t)))).reduce((a, t) => a + (+t.amount || 0), 0); }
 
 /* ================= render: top + KPIs ================= */
+/* ---- 카드 상품(같은 카드사의 여러 카드) ----
+   거래의 card는 카드사, cardId는 ref.cards의 항목 id입니다. cardId가 없는 옛 거래는 카드사의 대표 카드로(세금 분류는 세금 전용 카드로) 봅니다. */
+const CARD_KW = { 'lotte-tax': 'SKY|스카이|세금', lotte: 'KT|DC ?PLUS', 'samsung-mile': 'MILEAGE|마일리지|스카이', samsung: 'THE|PLATINUM|플래티넘', 'hyundai-kal': '대한항공|070|KAL', hyundai: '코스트코|COSTCO|리워드' };
+const cardsOf = (issuer) => refList('cards').filter((c) => c.card === issuer);
+function kwCardId(issuer, text) {
+  const t = String(text || ''); if (!t) return '';
+  const list = cardsOf(issuer);
+  for (const id of Object.keys(CARD_KW)) { if (list.some((c) => c.id === id) && new RegExp(CARD_KW[id], 'i').test(t)) return id; }
+  return '';
+}
+function defaultCardId(issuer, category) {
+  const l = cardsOf(issuer); if (!l.length) return '';
+  const tax = l.find((c) => /세금/.test(c.product || ''));
+  if (tax && category === '세금') return tax.id;
+  return (l.find((c) => !/세금/.test(c.product || '')) || l[0]).id;
+}
+const cardIdOf = (t) => (t.cardId && cardsOf(t.card).some((c) => c.id === t.cardId) ? t.cardId : defaultCardId(t.card, t.category));
+const cardShort = (c) => c.short || c.product || c.name || '';
+function cardLabel(issuer, id) {
+  const l = cardsOf(issuer); const c = l.find((x) => x.id === id);
+  return (issuer || '기타') + '카드' + (l.length > 1 && c ? ' · ' + cardShort(c) : '');
+}
+// 카드 선택 목록: value는 '카드사|id'
+function cardChoices() {
+  const out = []; const seen = new Set();
+  CARDS.forEach((k) => { const l = cardsOf(k); if (!l.length) { out.push({ v: k + '|', card: k, id: '', label: k }); return; } seen.add(k);
+    l.forEach((c) => out.push({ v: k + '|' + c.id, card: k, id: c.id, label: l.length > 1 ? k + ' · ' + cardShort(c) : k })); });
+  return out;
+}
+const splitCardVal = (v) => { const [card, id] = String(v || '').split('|'); return { card: card || '', id: id || '' }; };
+function cardOptions(selVal) { return cardChoices().map((o) => h('option', { value: o.v, text: o.label, selected: o.v === selVal })); }
+
 function renderTop(cur) { $('topBal').replaceChildren(cur ? man(cur.v) + '만' : '—', h('small', { text: cur ? cur.date + ' 마통 잔액' : '마통 잔액' })); }
 function renderKpis(ser) {
   const c = cfg(); const k = $('kpis'); k.replaceChildren(); const cur = ser[ser.length - 1];
@@ -246,7 +281,7 @@ function renderLimits() {
   $('limTitle').textContent = '카드별 ' + Number(ym.slice(5)) + '월 사용액';
   const items = refList('limits'); if (!items.length) { el.append(h('p', { class: 'empty', text: '카드 한도 기준값이 없습니다.' })); return; }
   items.forEach((l) => {
-    const used = cardUsed(l.members || [], [ym]) / 1e4; const cap = +l.cap_man || 0; const tgt = +l.target_man || 0; const scale = Math.max(cap, used, 1);
+    const used = cardUsed(l.members || [], [ym], l.ids) / 1e4; const cap = +l.cap_man || 0; const tgt = +l.target_man || 0; const scale = Math.max(cap, used, 1);
     const fill = h('i', { class: used > cap ? 'bad' : used > cap * 0.85 ? 'warn' : '' }); fill.style.width = Math.min(100, used / scale * 100) + '%';
     const tr = h('div', { class: 'track' }, fill); if (tgt > 0) { const u = h('u'); u.style.left = (tgt / scale * 100) + '%'; tr.append(u); }
     const left = cap - used; const tgtTxt = tgt > 0 ? (used >= tgt ? ' · 목표 ' + tgt + '만 달성' : ' · 목표까지 ' + (tgt - used).toFixed(1) + '만') : '';
@@ -332,7 +367,7 @@ function matchRows(rows, res) {
   const used = new Set(); const sum = { new: 0, same: 0, upgrade: 0, maybe: 0, nodate: 0, skip: 0, extra: [], gap: null };
   rows.forEach((r) => { r.m = { st: !bank && !SPENDY(r.kind) ? 'skip' : r.date && !r.out && Number.isFinite(r.amount) ? 'new' : 'nodate' }; });
   const live = rows.filter((r) => r.m.st === 'new');
-  const cand = (r, f) => pool.find((t) => !used.has(t.id) && t.date === r.date && t.amount === r.amount && (bank || t.card === r.card) && f(t));
+  const cand = (r, f) => pool.find((t) => !used.has(t.id) && t.date === r.date && t.amount === r.amount && (bank || (t.card === r.card && (!t.cardId || !r.cardId || t.cardId === r.cardId))) && f(t));
   const take = (r, t, st) => { used.add(t.id); r.m = { st, id: t.id }; };
   // 1) 확실히 같은 거래: 통장은 잔액까지 같음, 카드는 가맹점명이 같고 시각이 모순되지 않음
   live.forEach((r) => {
@@ -400,7 +435,7 @@ function normalize(out, today, hint) {
   const screen = ['bank', 'card', 'mixed'].includes(out && out.screen) ? out.screen : (items.some((i) => i && i.balance != null) ? 'bank' : 'card');
   const bank = screen === 'bank';
   const account = bank ? normAcct((out && (out.account || out.institution)) || '우리') : null;
-  const topCard = normCard(out && out.card); const rules = S.data.ref.catRules || {};
+  const topCard = normCard(out && out.card); const rules = S.data.ref.catRules || {}; const hv = splitCardVal(hint); hint = hv.card;
   // 날짜를 먼저 읽습니다: 화면의 날짜 범위(period)를 정하고, 거래 날짜가 범위 밖이면 확인을 요구합니다.
   const pf = fixDate(out && out.period && out.period.from, today), pt = fixDate(out && out.period && out.period.to, today);
   const rows = []; const seen = new Set();
@@ -418,8 +453,10 @@ function normalize(out, today, hint) {
     const desc = String(it.desc || '').slice(0, 60);
     const r = { include: !!date && !out_, date, time: fixTime(it.time), desc, amount: amt, balance: bank && Number.isFinite(bal) ? Math.round(bal) : null,
       card, kind, method: String(it.method || '').slice(0, 20), category: String(it.category || '기타').slice(0, 20) };
+    if (card) r.cardId = (hv.card && hv.card === card && hv.id) || kwCardId(card, it.product) || kwCardId(card, out && out.product) || '';
     const rule = !bank && SPENDY(kind) ? rules[normDesc(desc).slice(0, 40)] : null;
     if (rule) { r.category = rule; r.ruled = true; } // 사용자가 전에 고친 분류를 우선 적용
+    if (card) r.cardId = r.cardId || defaultCardId(card, r.category);
     if (out_) r.out = true; // Firestore는 undefined 값을 저장하지 못하므로 필요할 때만 넣습니다
     rows.push(r);
   });
@@ -429,7 +466,7 @@ function normalize(out, today, hint) {
     const date = fixDate(d && d.date, today); const i = toNum(d && d.in), o = toNum(d && d.out);
     return date ? { date, in: Number.isFinite(i) ? Math.abs(Math.round(i)) : null, out: Number.isFinite(o) ? Math.abs(Math.round(o)) : null } : null;
   }).filter(Boolean).slice(0, 14);
-  const res = { screen, account, card: topCard || null, hint: hint || null, rows, period: { from: pf || ds[0] || null, to: pt || ds[ds.length - 1] || null },
+  const res = { screen, account, card: topCard || null, hint: hint || null, hintId: hv.id || null, rows, period: { from: pf || ds[0] || null, to: pt || ds[ds.length - 1] || null },
     dayTotals, listTotal: Number.isFinite(lt) ? Math.round(lt) : null, screenBalance: Number.isFinite(sb) ? sb : null, notes: String((out && out.notes) || '').slice(0, 300) };
   res.check = bank ? chainCheck(rows) : cardCheck(rows, res);
   res.match = matchRows(rows, res); defaultInclude(rows);
@@ -439,7 +476,7 @@ async function callApi(tiles, hint) {
   const headers = { 'Content-Type': 'application/json' };
   const pass = lsGet(LS.pass, ''); if (pass) headers['x-app-passcode'] = pass;
   const key = lsGet(LS.key, ''); if (key) headers['x-user-api-key'] = key;
-  const r = await fetch('/api/recognize', { method: 'POST', headers, body: JSON.stringify({ images: tiles, today: todayStr(), cardHint: hint || '' }) });
+  const r = await fetch('/api/recognize', { method: 'POST', headers, body: JSON.stringify({ images: tiles, today: todayStr(), cardHint: splitCardVal(hint).card, cardProduct: (() => { const c = cardsOf(splitCardVal(hint).card).find((x) => x.id === splitCardVal(hint).id); return c && cardsOf(c.card).length > 1 ? c.product || '' : ''; })() }) });
   let data = {}; try { data = await r.json(); } catch (e) { }
   if (!r.ok) throw new Error(data.error || ('서버 오류 (' + r.status + ')'));
   return data.result;
@@ -498,7 +535,7 @@ async function saveRows(capId, result, rows, opts) {
   const now = new Date().toISOString(); const batch = {}; const del = []; let added = 0, upgraded = 0;
   const taken = (k) => !!(batch[k] || (S.data.tx[k] && !del.includes(k)));
   keep.forEach((r, i) => {
-    const t = { type: bank ? 'bank' : 'card', account: bank ? (result.account || '우리') : null, card: bank ? null : (r.card || '기타'), date: r.date, time: r.time || '', desc: r.desc || '',
+    const t = { type: bank ? 'bank' : 'card', account: bank ? (result.account || '우리') : null, card: bank ? null : (r.card || '기타'), cardId: bank ? null : (r.cardId || defaultCardId(r.card || '기타', r.category) || null), date: r.date, time: r.time || '', desc: r.desc || '',
       amount: r.amount, balance: bank && Number.isFinite(r.balance) ? r.balance : null, category: r.category || '기타', seq: keep.length - i, captureId: capId, source: 'capture', savedAt: now };
     if (!bank && r.method) t.method = r.method;
     const old = r.m && r.m.st === 'upgrade' ? S.data.tx[r.m.id] : null;
@@ -548,9 +585,9 @@ function renderQueue(force) {
   const el = $('queue'); el.replaceChildren();
   active.forEach((c) => {
     const res = c.result || {};
-    const kind = res.screen === 'bank' ? (res.account || '') + ' 통장' : res.screen === 'mixed' ? '결제·이체 혼합 내역' : res.screen === 'card' ? ((res.hint || res.card || '') ? (res.hint || res.card) + '카드 ' : '카드 ') + '이용내역' : '캡처';
+    const kind = res.screen === 'bank' ? acctLabel(res.account || '') : res.screen === 'mixed' ? '결제·이체 혼합 내역' : res.screen === 'card' ? ((res.hint || res.card || '') ? (res.hint || res.card) + '카드 ' : '카드 ') + '이용내역' : '캡처';
     const info = h('div', { class: 'q-info' }, h('span', { class: 'q-title', text: kind + (res.rows ? ' · ' + res.rows.length + '건' : '') }), statusPill(c));
-    if (c.status === 'recognizing' && c.cardHint) info.append(h('span', { class: 'sub', text: c.cardHint + '카드로 지정됨' }));
+    if (c.status === 'recognizing' && c.cardHint) { const hv = splitCardVal(c.cardHint); info.append(h('span', { class: 'sub', text: cardLabel(hv.card, hv.id) + '로 지정됨' })); }
     if (c.error) info.append(h('span', { class: 'sub', text: c.error }));
     if (res.notes) info.append(h('details', { class: 'memo' }, h('summary', { text: '인식 메모' }), h('span', { class: 'sub', text: res.notes })));
     const acts = h('div', { class: 'row' });
@@ -613,10 +650,10 @@ function reviewTable(c) {
       h('td', { class: 'dt' }, inp('date', 'date', '', '날짜')), h('td', { class: 'tm' }, inp('time', 'text', '', '시각')), h('td', { class: 'ds' }, inp('desc', 'text', '', '내용')), h('td', { class: 'am' }, amtInp)];
     if (bank) cells.push(h('td', { class: 'bl' }, inp('balance', 'text', 'num', '잔액')), h('td', { class: 'vc' }, h('span', { 'data-chk': '1', class: 'chk ' + (r.chk || ''), text: r.chk === 'ok' ? '일치' : r.chk === 'bad' ? '불일치' : '—' })));
     else {
-      const cardSel = h('select', { 'aria-label': '카드', onchange: (e) => { r.card = e.target.value; rematch(); } }, CARDS.map((k) => h('option', { value: k, text: k, selected: (r.card || '기타') === k })));
+      const cardSel = h('select', { 'aria-label': '카드', onchange: (e) => { const v = splitCardVal(e.target.value); r.card = v.card || '기타'; r.cardId = v.id || defaultCardId(r.card, r.category); rematch(); } }, cardOptions((r.card || '기타') + '|' + (r.cardId || '')));
       cells.push(h('td', { class: 'cd' }, cardSel), h('td', { class: 'kd' }, h('select', { 'aria-label': '종류', onchange: (e) => {
         r.kind = e.target.value; if (r.kind === 'spend') r.amount = Math.abs(r.amount); if (r.kind === 'refund') r.amount = -Math.abs(r.amount);
-        if (SPENDY(r.kind) && !r.card) { r.card = '기타'; cardSel.value = '기타'; } amtInp.value = won(r.amount); rematch(); } }, Object.entries(KIND_LABEL).map(([k, v]) => h('option', { value: k, text: v, selected: (r.kind || 'spend') === k })))));
+        if (SPENDY(r.kind) && !r.card) { r.card = '기타'; r.cardId = ''; cardSel.value = '기타|'; } amtInp.value = won(r.amount); rematch(); } }, Object.entries(KIND_LABEL).map(([k, v]) => h('option', { value: k, text: v, selected: (r.kind || 'spend') === k })))));
     }
     cells.push(h('td', { class: 'ct' }, h('select', { 'aria-label': '분류', class: r.ruled ? 'ruled' : '', onchange: (e) => { r.category = e.target.value; r.ruled = false; e.target.className = ''; } }, (bank ? BANK_CATS : CARD_CATS).map((k) => h('option', { value: k, text: k, selected: r.category === k })))));
     const tr = h('tr', {}, cells); trs.push(tr); tb.append(tr);
@@ -624,7 +661,7 @@ function reviewTable(c) {
   rematch();
   const head = ['', '상태', '날짜', '시각', '내용', bank ? '금액(입금+)' : '금액(결제+)'].concat(bank ? ['잔액', '검증'] : ['카드', '종류']).concat(['분류']);
   const tools = bank ? null : h('div', { class: 'row rvtools' }, h('label', { class: 'fld inline' }, '카드 한꺼번에 바꾸기',
-    h('select', { onchange: (e) => { const v = e.target.value; if (!v) return; rows.forEach((r) => { if (SPENDY(r.kind)) r.card = v; }); renderQueue(true); toast('결제 행의 카드를 ' + v + '로 바꿨습니다.'); } }, [h('option', { value: '', text: '선택' })].concat(CARDS.map((k) => h('option', { value: k, text: k }))))));
+    h('select', { onchange: (e) => { const v = e.target.value; if (!v) return; const sv = splitCardVal(v); rows.forEach((r) => { if (SPENDY(r.kind)) { r.card = sv.card; r.cardId = sv.id || defaultCardId(sv.card, r.category); } }); renderQueue(true); toast('결제 행의 카드를 ' + cardLabel(sv.card, sv.id).replace('카드', '') + '로 바꿨습니다.'); } }, [h('option', { value: '', text: '선택' })].concat(cardChoices().map((o) => h('option', { value: o.v, text: o.label }))))));
   saveBtn.addEventListener('click', async () => {
     saveBtn.disabled = true;
     try { const o = await saveRows(c.id, res, rows, { learn: true }); toast('신규 ' + o.added + '건' + (o.upgraded ? ' · 보완 ' + o.upgraded + '건' : '') + ' 반영했습니다. 제외한 ' + o.skipped + '건은 저장하지 않았습니다.'); }
@@ -658,14 +695,16 @@ function txEditor(t) {
   const date = h('input', { type: 'date', value: t.date }); const time = h('input', { type: 'text', value: t.time || '', placeholder: '16:43' });
   const desc = h('input', { type: 'text', value: t.desc || '', maxLength: 60 }); const amt = h('input', { type: 'text', inputMode: 'numeric', value: won(t.amount) });
   const bal = h('input', { type: 'text', inputMode: 'numeric', value: t.balance == null ? '' : won(t.balance) });
-  const who = h('select', {}, (bank ? ['우리', '농협', '신한', '기타'] : CARDS).map((k) => h('option', { value: k, text: k, selected: (bank ? t.account : t.card) === k })));
+  const who = bank ? h('select', {}, ACCTS.map((k) => h('option', { value: k, text: acctLabel(k), selected: t.account === k }))) : h('select', {}, cardOptions((t.card || '기타') + '|' + (cardIdOf(t) || '')));
+  const memo = h('textarea', { rows: 3, maxLength: 1000, placeholder: '왜 쓴 돈인지, 어떤 이유였는지 적어 두세요.' }); memo.value = t.memo || '';
   const cat = h('select', {}, (bank ? BANK_CATS : CARD_CATS).map((k) => h('option', { value: k, text: k, selected: t.category === k })));
   const close = () => { S.editId = null; renderTx(true); };
   const save = async () => {
     const a = toNum(amt.value); if (!Number.isFinite(a) || a === 0 || !date.value) { toast('날짜와 금액을 확인하세요.'); return; }
     const n = Object.assign({}, t); delete n.id;
     Object.assign(n, { date: date.value, time: fixTime(time.value), desc: desc.value.trim(), amount: Math.round(a), category: cat.value, edited: true });
-    if (bank) { const b = toNum(bal.value); n.balance = Number.isFinite(b) ? Math.round(b) : null; n.account = who.value; } else n.card = who.value;
+    if (bank) { const b = toNum(bal.value); n.balance = Number.isFinite(b) ? Math.round(b) : null; n.account = who.value; } else { const cv = splitCardVal(who.value); n.card = cv.card || '기타'; n.cardId = cv.id || defaultCardId(n.card, n.category) || null; }
+    n.memo = memo.value.trim();
     if (t.prev) n.prev = null;
     if (n.type === 'card' && n.category !== t.category) learnRules([{ desc: n.desc, category: n.category }]);
     const nk = uniqueKey(n, (k) => !!S.data.tx[k] && k !== t.id);
@@ -673,23 +712,33 @@ function txEditor(t) {
     if (nk === t.id) await store.setTx(nk, n); else { await store.setTx(nk, n); await store.delTx(t.id); }
     renderTx(true); toast('수정했습니다.');
   };
-  return h('div', { class: 'txed' }, h('div', { class: 'form' }, L('날짜', date), L('시각', time), L('내용', desc), L(bank ? '금액 (입금 +, 출금 −)' : '금액 (결제 +, 취소 −)', amt), bank ? L('거래 후 잔액', bal) : null, L(bank ? '계좌' : '카드', who), L('분류', cat)),
+  return h('div', { class: 'txed' }, h('div', { class: 'form' }, L('날짜', date), L('시각', time), L('내용', desc), L(bank ? '금액 (입금 +, 출금 −)' : '금액 (결제 +, 취소 −)', amt), bank ? L('거래 후 잔액', bal) : null, L(bank ? '계좌' : '카드', who), L('분류', cat), h('label', { class: 'fld wide' }, '메모', memo)),
     h('div', { class: 'row' }, h('button', { class: 'btn primary small', type: 'button', text: '수정 저장', onclick: save }), h('button', { class: 'btn small', type: 'button', text: '취소', onclick: close })));
 }
+function memoEditor(t) {
+  const ta = h('textarea', { rows: 3, maxLength: 1000, placeholder: '왜 쓴 돈인지, 어떤 이유였는지 적어 두세요. (예: 어머니 생신 선물, 일회성 지출)' }); ta.value = t.memo || '';
+  const save = async () => { const v = ta.value.trim(); S.memoId = null; const n = Object.assign({}, t); delete n.id; n.memo = v; await store.setTx(t.id, n); renderTx(true); toast(v ? '메모를 저장했습니다.' : '메모를 지웠습니다.'); };
+  setTimeout(() => ta.focus(), 30);
+  return h('div', { class: 'memo-ed' }, ta, h('div', { class: 'row' }, h('button', { class: 'btn primary small', type: 'button', text: '메모 저장', onclick: save }), h('button', { class: 'btn small', type: 'button', text: '취소', onclick: () => { S.memoId = null; renderTx(true); } })));
+}
 function renderTx(force) {
-  if (S.editId && !force) return; // 수정 중에는 다른 기기의 변경이 와도 입력이 지워지지 않게 다시 그리지 않습니다
+  if ((S.editId || S.memoId) && !force) return; // 수정 중에는 다른 기기의 변경이 와도 입력이 지워지지 않게 다시 그리지 않습니다
   const el = $('txList'); el.replaceChildren(); const f = S.txf;
-  const list = txs().filter((t) => f === 'all' || (f === 'woori' && t.type === 'bank' && t.account === '우리') || (f === 'nh' && t.type === 'bank' && t.account === '농협') || (f === 'card' && t.type === 'card')).sort(txSort).reverse().slice(0, 400);
+  const list = txs().filter((t) => f === 'all' || (f === 'woori' && t.type === 'bank' && t.account === '우리') || (f === 'nh' && t.type === 'bank' && t.account === '농협') || (f === 'shinhan' && t.type === 'bank' && t.account === '신한') || (f === 'card' && t.type === 'card') || (f === 'memo' && !!t.memo))
+    .filter((t) => !S.txq || [t.desc, t.memo, t.category, t.card, t.account].join(' ').toLowerCase().includes(S.txq)).sort(txSort).reverse().slice(0, 400);
   if (!list.length) { el.append(h('p', { class: 'empty', text: S.ready ? '거래가 없습니다. 홈에서 캡처를 붙여넣어 보세요.' : '불러오는 중…' })); return; }
   let day = '';
   list.forEach((t) => {
     if (t.date !== day) { day = t.date; el.append(h('div', { class: 'day', text: t.date })); }
-    const who = t.type === 'card' ? (t.card || '기타') + '카드' : (t.account || '') + ' 통장';
+    const who = t.type === 'card' ? cardLabel(t.card || '기타', cardIdOf(t)) : acctLabel(t.account);
     const del = h('button', { class: 'btn small ghost danger', type: 'button', text: S.armed === t.id ? '삭제 확인' : '삭제', onclick: async () => { if (S.armed !== t.id) { S.armed = t.id; renderTx(true); return; } S.armed = null; if (S.editId === t.id) S.editId = null; await store.delTx(t.id); renderTx(true); } });
-    const edit = h('button', { class: 'btn small ghost', type: 'button', text: S.editId === t.id ? '닫기' : '수정', onclick: () => { S.editId = S.editId === t.id ? null : t.id; renderTx(true); } });
+    const edit = h('button', { class: 'btn small ghost', type: 'button', text: S.editId === t.id ? '닫기' : '수정', onclick: () => { S.editId = S.editId === t.id ? null : t.id; S.memoId = null; renderTx(true); } });
+    const memoBtn = h('button', { class: 'btn small ghost' + (t.memo ? ' has' : ''), type: 'button', text: t.memo ? '메모 ✎' : '메모', onclick: () => { S.memoId = S.memoId === t.id ? null : t.id; S.editId = null; renderTx(true); } });
     const inflow = t.type === 'bank' && t.amount > 0;
     el.append(h('div', { class: 'li' }, h('span', { class: 'd', text: t.desc || '(내용 없음)' }), h('span', { class: 'a' + (inflow ? ' in' : ''), text: (inflow ? '+' : '') + won(t.amount) + '원' }),
-      h('span', { class: 'm', text: [t.time, who, t.category, t.balance != null ? '잔액 ' + won(t.balance) : '', isSummary(t) ? '월 합계' : '', t.edited ? '수정됨' : ''].filter(Boolean).join(' · ') }), h('span', { class: 'x acts' }, edit, del)));
+      h('span', { class: 'm', text: [t.time, who, t.category, t.balance != null ? '잔액 ' + won(t.balance) : '', isSummary(t) ? '월 합계' : '', t.edited ? '수정됨' : ''].filter(Boolean).join(' · ') }), h('span', { class: 'x acts' }, memoBtn, edit, del)));
+    if (t.memo && S.memoId !== t.id) el.append(h('div', { class: 'memo-row', text: t.memo, title: '눌러서 메모 수정', onclick: () => { S.memoId = t.id; S.editId = null; renderTx(true); } }));
+    if (S.memoId === t.id) el.append(memoEditor(t));
     if (S.editId === t.id) el.append(txEditor(t));
   });
 }
@@ -749,6 +798,15 @@ function renderPlan(ser) {
 function ensureRef() {
   if (S.ensured || !S.ready || !window.GF_SEED) return; S.ensured = true;
   Object.entries(window.GF_SEED.ref).forEach(([k, v]) => { if (S.data.ref[k] == null) store.setRef(k, JSON.parse(JSON.stringify(v))); });
+  // rev 2: 같은 카드사의 카드 2종씩(롯데·삼성·현대) 구분. 사용자가 고친 결제일·계좌·메모는 그대로 두고 이름·상품명만 맞춥니다.
+  if ((+S.data.ref.rev || 0) < 2) {
+    const want = window.GF_SEED.ref.cards || []; const order = want.map((c) => c.id); const rank = (id) => { const i = order.indexOf(id); return i < 0 ? 99 : i; };
+    const cur = refList('cards').map((c) => Object.assign({}, c));
+    want.forEach((w) => { const c = cur.find((x) => x.id === w.id); if (!c) cur.push(JSON.parse(JSON.stringify(w))); else Object.assign(c, { name: w.name, product: w.product, short: w.short }); });
+    cur.sort((a, b) => rank(a.id) - rank(b.id));
+    const lim = refList('limits').map((l) => Object.assign({}, l)); const kt = lim.find((l) => l.id === 'lotte'); if (kt) { kt.ids = ['lotte']; kt.name = '롯데(KT DC PLUS) 카드'; }
+    store.setRef('cards', cur); store.setRef('limits', lim); store.setRef('rev', 2);
+  }
 }
 
 /* ================= shared helpers ================= */
@@ -758,11 +816,9 @@ const salaryDay = (y, m) => { const d = new Date(y, m - 1, 25).getDay(); return 
 function bizDay(y, m, day) { const dim = new Date(y, m, 0).getDate(); const dt = new Date(y, m - 1, Math.min(day, dim)); while (dt.getDay() === 0 || dt.getDay() === 6) dt.setDate(dt.getDate() + 1); return dt; }
 const CARD_COLOR = { '농협': '#1a6b45', '롯데': '#a33b2b', '신한': '#1d4e89', '삼성': '#3a4150', '현대': '#5c6570', '국민': '#8a5a12', '기타': '#6e655b' };
 function cardUse(cd, ym) {
-  const taxSplit = refList('cards').some((x) => x.card === cd.card && x.id !== cd.id && /세금/.test(x.product || ''));
-  const isTaxCard = /세금/.test(cd.product || '');
-  return cardTxs().filter((t) => t.card === cd.card && ymOf(t.date) === ym && (!taxSplit || (isTaxCard ? t.category === '세금' : t.category !== '세금')))
-    .reduce((a, t) => a + (+t.amount || 0), 0);
+  return cardTxs().filter((t) => t.card === cd.card && ymOf(t.date) === ym && cardIdOf(t) === cd.id).reduce((a, t) => a + (+t.amount || 0), 0);
 }
+const apCardId = (a) => (a.cardId && cardsOf(a.card).some((c) => c.id === a.cardId) ? a.cardId : defaultCardId(a.card, ''));
 
 /* ================= calendar ================= */
 function calEvents(ym) {
@@ -775,7 +831,7 @@ function calEvents(ym) {
     if (!cd.payDay) return; const used = cardUse(cd, prev);
     add(ds(bizDay(y, m, cd.payDay)), { kind: 'card', label: cd.name + ' 결제', sub: (cd.product ? cd.product + ' · ' : '') + (used ? Number(prev.slice(5)) + '월 기록된 사용 기준 추정' : '기록된 사용 없음 · 금액 미정') + (cd.account ? ' · ' + cd.account : ''), amount: used ? -used : null });
   });
-  refList('autopays').forEach((a) => { if (!a.day) return; add(ym + '-' + pad(Math.min(a.day, dim)), { kind: 'auto', label: a.name, sub: a.card + '카드 자동결제', amount: -(+a.amount || 0) }); });
+  refList('autopays').forEach((a) => { if (!a.day) return; add(ym + '-' + pad(Math.min(a.day, dim)), { kind: 'auto', label: a.name, sub: cardLabel(a.card, apCardId(a)) + ' 자동결제', amount: -(+a.amount || 0) }); });
   const tax = S.data.ref.tax || {};
   (tax.schedule || []).forEach((t) => { if (ymOf(t.date) === ym) add(t.date, { kind: 'tax', label: t.name, sub: '세금 (예정)', amount: -t.man * 1e4 }); });
   (tax.paid || []).forEach((t) => { if (ymOf(t.date) === ym) add(t.date, { kind: 'tax', label: t.name, sub: '세금 (납부)', amount: -t.man * 1e4 }); });
@@ -809,7 +865,7 @@ function renderCal() {
   const selTx = txs().filter((t) => t.date === sel).sort(txSort);
   if (!selEv.length && !selTx.length) list.append(h('p', { class: 'empty', text: '이 날은 일정이나 기록된 거래가 없습니다.' }));
   selEv.forEach((e) => list.append(h('div', { class: 'ev' }, h('i', { class: KIND_CLASS[e.kind] }), h('span', { class: 't' }, e.label, h('small', { text: e.sub })), h('span', { class: 'a', text: e.amount == null ? '미정' : (e.amount > 0 ? '+' : '') + won(e.amount) + '원' }))));
-  selTx.forEach((t) => list.append(h('div', { class: 'ev' }, h('i', { class: 'ev-tx' }), h('span', { class: 't' }, t.desc || '(내용 없음)', h('small', { text: [t.time, t.type === 'card' ? t.card + '카드' : t.account + ' 통장', '기록된 거래'].filter(Boolean).join(' · ') })), h('span', { class: 'a', text: (t.type === 'bank' && t.amount > 0 ? '+' : '') + won(t.amount) + '원' }))));
+  selTx.forEach((t) => list.append(h('div', { class: 'ev' }, h('i', { class: 'ev-tx' }), h('span', { class: 't' }, t.desc || '(내용 없음)', h('small', { text: [t.time, t.type === 'card' ? cardLabel(t.card, cardIdOf(t)) : acctLabel(t.account), '기록된 거래'].filter(Boolean).join(' · ') }), t.memo ? h('small', { class: 'memo-line', text: '메모 · ' + t.memo }) : null), h('span', { class: 'a', text: (t.type === 'bank' && t.amount > 0 ? '+' : '') + won(t.amount) + '원' }))));
   $('calSumTitle').textContent = m + '월 예정 합계';
   const sumK = (k) => d3.sum(ev.filter((e) => e.kind === k && e.amount != null), (e) => e.amount);
   $('calSum').replaceChildren(...[['급여', sumK('in')], ['이체·고정', sumK('plan')], ['카드 결제 (추정)', sumK('card')], ['자동결제', sumK('auto')], ['세금', sumK('tax')]]
@@ -825,8 +881,8 @@ function renderCards() {
   if (!cards.length) { g.append(h('p', { class: 'empty', text: '카드 정보가 없습니다.' })); }
   cards.forEach((cd, idx) => {
     const used = cardUse(cd, ym) / 1e4, usedPrev = cardUse(cd, prev) / 1e4;
-    const lim = /세금/.test(cd.product || '') ? null : refList('limits').find((l) => (l.members || []).includes(cd.card));
-    const aps = /세금/.test(cd.product || '') ? [] : refList('autopays').filter((a) => a.card === cd.card); const apSum = d3.sum(aps, (a) => +a.amount) / 1e4;
+    const sibs = cardsOf(cd.card).filter((x) => !/세금/.test(x.product || '')); const lim = /세금/.test(cd.product || '') ? null : refList('limits').find((l) => (l.members || []).includes(cd.card) && (l.ids ? l.ids.includes(cd.id) : sibs.length <= 1));
+    const aps = refList('autopays').filter((a) => a.card === cd.card && apCardId(a) === cd.id); const apSum = d3.sum(aps, (a) => +a.amount) / 1e4;
     const box = h('div', { class: 'cc' }); box.style.setProperty('--cc', CARD_COLOR[cd.card] || 'var(--accent)');
     box.append(h('div', { class: 'cc-top' }, h('div', {}, h('b', { text: cd.name }), h('small', { text: cd.product || '' })),
       h('button', { class: 'btn small ghost', type: 'button', text: S.cardEdit === cd.id ? '닫기' : '편집', onclick: () => { S.cardEdit = S.cardEdit === cd.id ? null : cd.id; renderCards(); } })));
@@ -849,7 +905,7 @@ function renderCards() {
         e.preventDefault(); const next = Object.assign({}, cd);
         form.querySelectorAll('[data-k]').forEach((inp) => { const k = inp.dataset.k; next[k] = k === 'payDay' || k === 'annualFee' ? (Number(toNum(inp.value)) || 0) : inp.value.trim(); });
         const list = refList('cards').slice(); list[idx] = next; S.cardEdit = null; await store.setRef('cards', list); toast('카드 정보를 저장했습니다.');
-      } }, f('이름', 'name'), f('상품명', 'product'), f('결제일 (일)', 'payDay', 'number'), f('결제계좌', 'account'), f('혜택 · 실적 조건', 'benefit'), f('연회비 (원)', 'annualFee'), f('메모', 'memo'),
+      } }, f('이름', 'name'), f('상품명', 'product'), f('짧은 이름', 'short'), f('결제일 (일)', 'payDay', 'number'), f('결제계좌', 'account'), f('혜택 · 실적 조건', 'benefit'), f('연회비 (원)', 'annualFee'), f('메모', 'memo'),
         h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'submit', text: '저장' }),
           h('button', { class: 'btn ghost danger', type: 'button', text: S.armed === 'cd' + cd.id ? '삭제 확인' : '카드 삭제', onclick: async () => { if (S.armed !== 'cd' + cd.id) { S.armed = 'cd' + cd.id; renderCards(); return; } S.armed = null; S.cardEdit = null; await store.setRef('cards', refList('cards').filter((x) => x.id !== cd.id)); } })));
       box.append(form);
@@ -861,15 +917,15 @@ function renderCards() {
   const all = refList('autopays'); const order = all.map((a, i) => ({ a, i })).sort((x, y) => (x.a.card === y.a.card ? (x.a.day || 0) - (y.a.day || 0) : CARDS.indexOf(x.a.card) - CARDS.indexOf(y.a.card)));
   const groups = d3.rollups(all, (v) => d3.sum(v, (x) => +x.amount), (x) => x.card);
   $('autoPays').replaceChildren(h('thead', {}, h('tr', {}, h('th', { text: '카드' }), h('th', { text: '항목' }), h('th', { class: 'n', text: '결제일' }), h('th', { class: 'n', text: '월(원)' }), h('th'))),
-    h('tbody', {}, order.map(({ a, i }) => h('tr', {}, h('td', { text: a.card }), h('td', { text: a.name }), h('td', { class: 'n', text: a.day ? a.day + '일' : '' }), h('td', { class: 'n', text: won(+a.amount) }),
+    h('tbody', {}, order.map(({ a, i }) => h('tr', {}, h('td', { text: cardLabel(a.card, apCardId(a)).replace('카드', '') }), h('td', { text: a.name }), h('td', { class: 'n', text: a.day ? a.day + '일' : '' }), h('td', { class: 'n', text: won(+a.amount) }),
       h('td', { class: 'n' }, h('button', { class: 'btn small ghost danger', type: 'button', text: S.armed === 'ap' + i ? '확인' : '삭제', onclick: async () => { if (S.armed !== 'ap' + i) { S.armed = 'ap' + i; renderCards(); return; } S.armed = null; await store.setRef('autopays', all.filter((_, j) => j !== i)); } }))))),
     h('tfoot', {}, h('tr', {}, h('td', { text: '합계' }), h('td', { text: groups.map(([k, v]) => k + ' ' + (v / 1e4).toFixed(1) + '만').join(' · ') }), h('td'), h('td', { class: 'n', text: won(d3.sum(all, (x) => +x.amount)) }), h('td'))));
-  const sel = $('apCard'); if (!sel.options.length) CARDS.forEach((k) => sel.append(h('option', { value: k, text: k })));
+  const sel = $('apCard'); const cur = sel.value; sel.replaceChildren(...cardOptions(cur));
 }
 $('apForm').addEventListener('submit', async (e) => {
   e.preventDefault(); const amt = toNum($('apAmt').value); const day = Number($('apDay').value);
   if (!Number.isFinite(amt) || amt <= 0 || !(day >= 1 && day <= 31) || !$('apName').value.trim()) { toast('항목, 결제일, 금액을 확인하세요.'); return; }
-  await store.setRef('autopays', refList('autopays').concat([{ card: $('apCard').value, name: $('apName').value.trim(), amount: Math.round(amt), day }]));
+  const ac = splitCardVal($('apCard').value); await store.setRef('autopays', refList('autopays').concat([{ card: ac.card || '기타', cardId: ac.id, name: $('apName').value.trim(), amount: Math.round(amt), day }]));
   $('apName').value = ''; $('apAmt').value = ''; $('apDay').value = ''; toast('자동결제를 추가했습니다.');
 });
 
@@ -927,11 +983,17 @@ $('taxAddForm').addEventListener('submit', async (e) => {
 
 /* ================= render all ================= */
 let rT = 0;
+function fillChoosers() {
+  const ch = cardChoices(); const sig = ch.map((o) => o.v + o.label).join(',');
+  const cc = $('capCard'); if (cc && cc.dataset.sig !== sig) { const cur = cc.value; cc.dataset.sig = sig; cc.replaceChildren(h('option', { value: '', text: '자동 인식' }), ...ch.map((o) => h('option', { value: o.v, text: o.label }))); cc.value = cur; }
+  const mt = $('mType'); if (mt && mt.dataset.sig !== sig) { const cur = mt.value; mt.dataset.sig = sig;
+    mt.replaceChildren(...['우리', '농협', '신한'].map((k) => h('option', { value: k, text: acctLabel(k) })), ...ch.map((o) => h('option', { value: 'card:' + o.v, text: '카드 · ' + o.label }))); if (cur) mt.value = cur; }
+}
 function render() {
   cancelAnimationFrame(rT);
   rT = requestAnimationFrame(() => {
     const ser = series(); const cur = ser[ser.length - 1];
-    renderTop(cur); renderKpis(ser); renderChart(ser); renderLimits(); renderFlow(); renderQueue(false); renderTx(); renderCapLog(); renderPlan(ser); renderCal(); renderCards(); renderTax();
+    fillChoosers(); renderTop(cur); renderKpis(ser); renderChart(ser); renderLimits(); renderFlow(); renderQueue(false); renderTx(); renderCapLog(); renderPlan(ser); renderCal(); renderCards(); renderTax();
   });
 }
 function setTab(t) {
@@ -944,7 +1006,8 @@ function setTab(t) {
 /* ================= events ================= */
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
 window.addEventListener('hashchange', () => { const t = location.hash.slice(1); if (TABS.includes(t) && t !== S.tab) setTab(t); });
-document.querySelectorAll('#txFilter .chip').forEach((b) => b.addEventListener('click', () => { S.txf = b.dataset.f; document.querySelectorAll('#txFilter .chip').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); renderTx(); }));
+$('txSearch').addEventListener('input', (e) => { S.txq = e.target.value.trim().toLowerCase(); renderTx(true); });
+document.querySelectorAll('#txFilter .chip').forEach((b) => b.addEventListener('click', () => { S.txf = b.dataset.f; document.querySelectorAll('#txFilter .chip').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); S.editId = null; S.memoId = null; renderTx(true); }));
 $('surplusSel').addEventListener('change', (e) => { S.surplus = Number(e.target.value); render(); });
 ['pickFile', 'pickCam'].forEach((id) => $(id).addEventListener('change', (e) => { if (e.target.files.length) addImages(e.target.files); e.target.value = ''; }));
 $('autoSave').checked = lsGet(LS.auto, '1') === '1';
@@ -973,14 +1036,14 @@ pz.addEventListener('drop', (e) => { const f = filesFrom(e.dataTransfer); if (f.
 $('mDate').value = todayStr();
 $('manForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const tv = $('mType').value; const isCard = tv.startsWith('card:'); const amt = toNum($('mAmt').value); const bal = toNum($('mBal').value);
+  const tv = $('mType').value; const isCard = tv.startsWith('card:'); const mcv = isCard ? splitCardVal(tv.slice(5)) : { card: '', id: '' }; const amt = toNum($('mAmt').value); const bal = toNum($('mBal').value);
   if (!Number.isFinite(amt) || amt === 0 || !$('mDate').value || !$('mDesc').value.trim()) { toast('날짜, 내용, 금액을 확인하세요.'); return; }
-  const t = { type: isCard ? 'card' : 'bank', account: isCard ? null : tv, card: isCard ? tv.slice(5) : null, date: $('mDate').value, time: $('mTime').value || '', desc: $('mDesc').value.trim(),
+  const t = { type: isCard ? 'card' : 'bank', account: isCard ? null : tv, card: isCard ? (mcv.card || '기타') : null, cardId: isCard ? (mcv.id || defaultCardId(mcv.card || '기타', '') || null) : null, memo: $('mMemo').value.trim(), date: $('mDate').value, time: $('mTime').value || '', desc: $('mDesc').value.trim(),
     amount: Math.round(amt), balance: !isCard && Number.isFinite(bal) ? Math.round(bal) : null, category: '기타', seq: 0, source: 'manual', savedAt: new Date().toISOString() };
   const probe = [{ date: t.date, time: t.time, desc: t.desc, amount: t.amount, balance: t.balance, card: t.card }];
   matchRows(probe, { screen: t.type, account: t.account, check: {} });
   if (probe[0].m.st === 'same') { toast('이미 같은 거래가 있습니다. 거래 목록에서 확인하세요.'); return; }
-  await store.setTx(uniqueKey(t, (k) => !!S.data.tx[k]), t); $('mAmt').value = ''; $('mBal').value = ''; $('mDesc').value = ''; toast('추가했습니다.');
+  await store.setTx(uniqueKey(t, (k) => !!S.data.tx[k]), t); $('mAmt').value = ''; $('mBal').value = ''; $('mDesc').value = ''; $('mMemo').value = ''; toast('추가했습니다.');
 });
 $('openSettings').addEventListener('click', () => { $('sCode').value = S.code; $('sPass').value = lsGet(LS.pass, ''); $('sKey').value = lsGet(LS.key, ''); $('settings').showModal(); });
 $('sPush').addEventListener('click', async () => {
