@@ -202,16 +202,17 @@ function defaultCardId(issuer, category) {
   return (l.find((c) => !/세금/.test(c.product || '')) || l[0]).id;
 }
 const cardIdOf = (t) => (t.cardId && cardsOf(t.card).some((c) => c.id === t.cardId) ? t.cardId : defaultCardId(t.card, t.category));
+const cardShortIssuer = (c) => c.card + '카드';
 const cardShort = (c) => c.short || c.product || c.name || '';
 function cardLabel(issuer, id) {
   const l = cardsOf(issuer); const c = l.find((x) => x.id === id);
-  return (issuer || '기타') + '카드' + (l.length > 1 && c ? ' · ' + cardShort(c) : '');
+  return c ? (c.name || (issuer + '카드')) : (issuer || '기타') + '카드';
 }
 // 카드 선택 목록: value는 '카드사|id'
 function cardChoices() {
   const out = []; const seen = new Set();
   CARDS.forEach((k) => { const l = cardsOf(k); if (!l.length) { out.push({ v: k + '|', card: k, id: '', label: k }); return; } seen.add(k);
-    l.forEach((c) => out.push({ v: k + '|' + c.id, card: k, id: c.id, label: l.length > 1 ? k + ' · ' + cardShort(c) : k })); });
+    l.forEach((c) => out.push({ v: k + '|' + c.id, card: k, id: c.id, label: c.name || k })); });
   return out;
 }
 const splitCardVal = (v) => { const [card, id] = String(v || '').split('|'); return { card: card || '', id: id || '' }; };
@@ -233,7 +234,7 @@ function renderKpis(ser) {
   const lim = refList('limits').find((l) => l.id === 'nh'); const ms = monthsBack(3);
   const nh = cardUsed(lim ? lim.members : ['농협'], ms) / 1e4; const goal = c.nh3m_goal_man; const p = nh / goal * 100;
   const nb = h('i', { class: p >= 100 ? '' : p >= 60 ? 'warn' : 'bad' }); nb.style.width = Math.min(100, p) + '%';
-  k.append(h('div', { class: 'kpi' }, h('span', { class: 'l', text: '농협카드 3개월 실적' }), h('span', { class: 'v' }, nh.toFixed(1), h('small', { text: '/ ' + goal + '만' })), h('div', { class: 'bar' }, nb),
+  k.append(h('div', { class: 'kpi' }, h('span', { class: 'l', text: '올바른SAFE카드 3개월 실적' }), h('span', { class: 'v' }, nh.toFixed(1), h('small', { text: '/ ' + goal + '만' })), h('div', { class: 'bar' }, nb),
     h('span', { class: 's', text: ms[2].slice(2).replace('-', '.') + '~' + ms[0].slice(2).replace('-', '.') + (p >= 100 ? ' · 달성' : ' · ' + Math.round(goal - nh) + '만 남음') })));
 }
 
@@ -661,7 +662,7 @@ function reviewTable(c) {
   rematch();
   const head = ['', '상태', '날짜', '시각', '내용', bank ? '금액(입금+)' : '금액(결제+)'].concat(bank ? ['잔액', '검증'] : ['카드', '종류']).concat(['분류']);
   const tools = bank ? null : h('div', { class: 'row rvtools' }, h('label', { class: 'fld inline' }, '카드 한꺼번에 바꾸기',
-    h('select', { onchange: (e) => { const v = e.target.value; if (!v) return; const sv = splitCardVal(v); rows.forEach((r) => { if (SPENDY(r.kind)) { r.card = sv.card; r.cardId = sv.id || defaultCardId(sv.card, r.category); } }); renderQueue(true); toast('결제 행의 카드를 ' + cardLabel(sv.card, sv.id).replace('카드', '') + '로 바꿨습니다.'); } }, [h('option', { value: '', text: '선택' })].concat(cardChoices().map((o) => h('option', { value: o.v, text: o.label }))))));
+    h('select', { onchange: (e) => { const v = e.target.value; if (!v) return; const sv = splitCardVal(v); rows.forEach((r) => { if (SPENDY(r.kind)) { r.card = sv.card; r.cardId = sv.id || defaultCardId(sv.card, r.category); } }); renderQueue(true); toast('결제 행의 카드를 ' + cardLabel(sv.card, sv.id) + '로 바꿨습니다.'); } }, [h('option', { value: '', text: '선택' })].concat(cardChoices().map((o) => h('option', { value: o.v, text: o.label }))))));
   saveBtn.addEventListener('click', async () => {
     saveBtn.disabled = true;
     try { const o = await saveRows(c.id, res, rows, { learn: true }); toast('신규 ' + o.added + '건' + (o.upgraded ? ' · 보완 ' + o.upgraded + '건' : '') + ' 반영했습니다. 제외한 ' + o.skipped + '건은 저장하지 않았습니다.'); }
@@ -798,14 +799,21 @@ function renderPlan(ser) {
 function ensureRef() {
   if (S.ensured || !S.ready || !window.GF_SEED) return; S.ensured = true;
   Object.entries(window.GF_SEED.ref).forEach(([k, v]) => { if (S.data.ref[k] == null) store.setRef(k, JSON.parse(JSON.stringify(v))); });
-  // rev 2: 같은 카드사의 카드 2종씩(롯데·삼성·현대) 구분. 사용자가 고친 결제일·계좌·메모는 그대로 두고 이름·상품명만 맞춥니다.
-  if ((+S.data.ref.rev || 0) < 2) {
+  // rev 3: 카드 정식 명칭·주요 혜택 반영. 사용자가 고친 결제일·계좌·메모·연회비는 그대로 둡니다.
+  if ((+S.data.ref.rev || 0) < 3) {
     const want = window.GF_SEED.ref.cards || []; const order = want.map((c) => c.id); const rank = (id) => { const i = order.indexOf(id); return i < 0 ? 99 : i; };
     const cur = refList('cards').map((c) => Object.assign({}, c));
-    want.forEach((w) => { const c = cur.find((x) => x.id === w.id); if (!c) cur.push(JSON.parse(JSON.stringify(w))); else Object.assign(c, { name: w.name, product: w.product, short: w.short }); });
+    want.forEach((w) => {
+      const c = cur.find((x) => x.id === w.id);
+      if (!c) { cur.push(JSON.parse(JSON.stringify(w))); return; }
+      Object.assign(c, { name: w.name, product: w.product, perks: (w.perks || []).slice(), perksNote: w.perksNote || '' });
+      if (w.short) c.short = w.short;
+      if (!c.benefit && w.benefit) c.benefit = w.benefit;
+    });
     cur.sort((a, b) => rank(a.id) - rank(b.id));
-    const lim = refList('limits').map((l) => Object.assign({}, l)); const kt = lim.find((l) => l.id === 'lotte'); if (kt) { kt.ids = ['lotte']; kt.name = '롯데(KT DC PLUS) 카드'; }
-    store.setRef('cards', cur); store.setRef('limits', lim); store.setRef('rev', 2);
+    const lim = refList('limits').map((l) => Object.assign({}, l)); const sl = (window.GF_SEED.ref.limits || []);
+    lim.forEach((l) => { const s = sl.find((x) => x.id === l.id); if (s) l.name = s.name; if (l.id === 'lotte') l.ids = ['lotte']; });
+    store.setRef('cards', cur); store.setRef('limits', lim); store.setRef('rev', 3);
   }
 }
 
@@ -884,7 +892,7 @@ function renderCards() {
     const sibs = cardsOf(cd.card).filter((x) => !/세금/.test(x.product || '')); const lim = /세금/.test(cd.product || '') ? null : refList('limits').find((l) => (l.members || []).includes(cd.card) && (l.ids ? l.ids.includes(cd.id) : sibs.length <= 1));
     const aps = refList('autopays').filter((a) => a.card === cd.card && apCardId(a) === cd.id); const apSum = d3.sum(aps, (a) => +a.amount) / 1e4;
     const box = h('div', { class: 'cc' }); box.style.setProperty('--cc', CARD_COLOR[cd.card] || 'var(--accent)');
-    box.append(h('div', { class: 'cc-top' }, h('div', {}, h('b', { text: cd.name }), h('small', { text: cd.product || '' })),
+    box.append(h('div', { class: 'cc-top' }, h('div', {}, h('b', { text: cd.name }), h('small', { text: cd.product && cd.product !== cd.name ? cd.product : cardShortIssuer(cd) })),
       h('button', { class: 'btn small ghost', type: 'button', text: S.cardEdit === cd.id ? '닫기' : '편집', onclick: () => { S.cardEdit = S.cardEdit === cd.id ? null : cd.id; renderCards(); } })));
     box.append(h('div', { class: 'cc-grid' },
       h('div', {}, h('span', { text: '결제일' }), h('b', { text: cd.payDay ? '매월 ' + cd.payDay + '일' : '—' })),
@@ -897,7 +905,8 @@ function renderCards() {
       const p = used / lim.target_man * 100; const bi = h('i', { class: p >= 100 ? '' : 'warn' }); bi.style.width = Math.min(100, p) + '%';
       box.append(h('div', {}, h('span', { class: 'sub', text: '실적 목표 ' + lim.target_man + '만 대비 ' + Math.round(p) + '%' }), h('div', { class: 'bar' }, bi)));
     }
-    if (cd.benefit) box.append(h('p', {}, h('b', { text: '혜택 · 조건 ' }), cd.benefit));
+    if (cd.perks && cd.perks.length) box.append(h('div', { class: 'perks' }, h('b', { text: '주요 혜택' }), h('ul', {}, cd.perks.map((p) => h('li', { text: p }))), cd.perksNote ? h('small', { class: 'sub', text: cd.perksNote }) : null));
+    if (cd.benefit) box.append(h('p', {}, h('b', { text: '실적 · 조건 ' }), cd.benefit));
     if (cd.memo) box.append(h('p', { class: 'sub', text: cd.memo }));
     if (S.cardEdit === cd.id) {
       const f = (label, key, type) => h('label', { class: 'fld' }, label, h('input', { type: type || 'text', value: cd[key] == null ? '' : cd[key], 'data-k': key }));
@@ -917,7 +926,7 @@ function renderCards() {
   const all = refList('autopays'); const order = all.map((a, i) => ({ a, i })).sort((x, y) => (x.a.card === y.a.card ? (x.a.day || 0) - (y.a.day || 0) : CARDS.indexOf(x.a.card) - CARDS.indexOf(y.a.card)));
   const groups = d3.rollups(all, (v) => d3.sum(v, (x) => +x.amount), (x) => x.card);
   $('autoPays').replaceChildren(h('thead', {}, h('tr', {}, h('th', { text: '카드' }), h('th', { text: '항목' }), h('th', { class: 'n', text: '결제일' }), h('th', { class: 'n', text: '월(원)' }), h('th'))),
-    h('tbody', {}, order.map(({ a, i }) => h('tr', {}, h('td', { text: cardLabel(a.card, apCardId(a)).replace('카드', '') }), h('td', { text: a.name }), h('td', { class: 'n', text: a.day ? a.day + '일' : '' }), h('td', { class: 'n', text: won(+a.amount) }),
+    h('tbody', {}, order.map(({ a, i }) => h('tr', {}, h('td', { text: cardLabel(a.card, apCardId(a)) }), h('td', { text: a.name }), h('td', { class: 'n', text: a.day ? a.day + '일' : '' }), h('td', { class: 'n', text: won(+a.amount) }),
       h('td', { class: 'n' }, h('button', { class: 'btn small ghost danger', type: 'button', text: S.armed === 'ap' + i ? '확인' : '삭제', onclick: async () => { if (S.armed !== 'ap' + i) { S.armed = 'ap' + i; renderCards(); return; } S.armed = null; await store.setRef('autopays', all.filter((_, j) => j !== i)); } }))))),
     h('tfoot', {}, h('tr', {}, h('td', { text: '합계' }), h('td', { text: groups.map(([k, v]) => k + ' ' + (v / 1e4).toFixed(1) + '만').join(' · ') }), h('td'), h('td', { class: 'n', text: won(d3.sum(all, (x) => +x.amount)) }), h('td'))));
   const sel = $('apCard'); const cur = sel.value; sel.replaceChildren(...cardOptions(cur));
