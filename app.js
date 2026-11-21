@@ -510,6 +510,12 @@ function imgEl(id, cls, alt, onclick) {
   const im = h('img', { class: cls, alt, onclick }); if (S.thumbs[id]) im.src = S.thumbs[id]; else store.getImg(id).then((u) => { if (u) im.src = u; });
   return im;
 }
+function bigImg(id) {
+  const im = h('img', { alt: '원본 캡처', onclick: () => openViewer(id) });
+  if (S.thumbs[id]) im.src = S.thumbs[id];
+  store.getImg(id).then((u) => { if (u) im.src = u; });
+  return im;
+}
 function renderQueue(force) {
   const active = caps().filter((c) => ['recognizing', 'review', 'failed'].includes(c.status)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   const sig = active.map((c) => c.id + ':' + c.status + ':' + (c.recognizedAt || '')).join(',') + '|' + [...S.running].join(',');
@@ -526,7 +532,11 @@ function renderQueue(force) {
     if (!S.running.has(c.id) && S.files[c.id]) acts.append(h('button', { class: 'btn small', type: 'button', text: '다시 인식', onclick: () => recognize(c.id) }));
     acts.append(h('button', { class: 'btn small ghost', type: 'button', text: '버리기', onclick: () => discard(c) }));
     const box = h('div', { class: 'q' }, h('div', { class: 'q-head' }, imgEl(c.id, 'q-thumb', '캡처', () => openViewer(c.id)), info), acts);
-    if (c.status === 'review') box.append(reviewTable(c));
+    if (c.status === 'review') {
+      box.append(reviewTable(c));
+      // PC 넓은 화면: 원본 캡처를 표 옆에 크게 띄워 대조하며 검수 (좁은 화면에서는 CSS로 숨김)
+      box.classList.add('has-rv'); box.append(h('div', { class: 'q-big' }, bigImg(c.id)));
+    }
     el.append(box);
   });
 }
@@ -955,7 +965,18 @@ $('setForm').addEventListener('submit', (e) => {
   if (code && code !== S.code) { if (!/^[A-Za-z0-9_-]{4,40}$/.test(code)) { toast('동기화 코드는 영문·숫자 4~40자입니다.'); return; } lsSet(LS.code, code); location.reload(); return; }
   toast('설정을 저장했습니다.');
 });
-let rzT = 0; window.addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(() => { if (S.tab === 'home') renderChart(series()); }, 150); });
+// 창 크기뿐 아니라 PC 배치가 바뀌어 차트 칸 폭이 달라질 때도 다시 그림
+let rzT = 0, rzW = 0;
+const rzRun = () => { clearTimeout(rzT); rzT = setTimeout(() => { const w = $('chart').clientWidth; if (S.tab === 'home' && w && w !== rzW) { rzW = w; renderChart(series()); } }, 150); };
+window.addEventListener('resize', rzRun);
+if (window.ResizeObserver) new ResizeObserver(rzRun).observe($('chart'));
+// PC 키보드: 달력 탭에서 ← → 로 달 이동
+document.addEventListener('keydown', (e) => {
+  if (S.tab !== 'cal' || e.altKey || e.ctrlKey || e.metaKey) return;
+  const t = e.target; if (t && (t.isContentEditable || /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName))) return;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); $('calPrev').click(); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); $('calNext').click(); }
+});
 
 /* ================= start ================= */
 (function start() {
