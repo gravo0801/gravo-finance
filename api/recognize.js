@@ -7,12 +7,12 @@
 const BANK_CATS = ['급여', '카드대금', '본인이체', '투자·증권', '적금·저축', '대출·이자', '세금', '기타'];
 const CARD_CATS = ['외식·카페', '마트·생활', '쇼핑', '교통·차량', '의료', '통신·구독', '보험', '세금', '기타'];
 
-function buildPrompt(today, n, hint) {
+function buildPrompt(today, n, hint, product) {
   return [
     '한국 은행·카드·토스 앱의 화면 캡처에서 거래 내역을 읽어 JSON으로 옮기세요.',
     `오늘 날짜는 ${today}입니다. 화면에 연도가 없으면 오늘 기준으로 정하고, 오늘보다 미래가 되면 전년도로 적으세요.`,
     n > 1 ? `이미지 ${n}장은 한 화면을 위에서 아래로 자른 조각이고 경계가 조금 겹칩니다. 겹친 거래는 한 번만 적으세요.` : '이미지는 한 장입니다.',
-    hint ? `사용자가 이 캡처를 "${hint}카드" 내역이라고 지정했습니다.` : '',
+    hint ? `사용자가 이 캡처를 "${hint}카드" 내역이라고 지정했습니다.${product ? ` 카드 상품은 "${product}"입니다.` : ''}` : '',
     '',
     '[화면 종류 screen]',
     '"bank" = 은행 계좌 거래내역(입출금과 거래 후 잔액). "card" = 카드사 앱의 이용내역(카드 결제만). "mixed" = 토스 "전체" 탭처럼 카드·간편결제, 계좌 이체, 송금, 입금이 섞인 목록. "other" = 그 밖.',
@@ -43,6 +43,7 @@ function buildPrompt(today, n, hint) {
     '- 화면에서 카드사가 보일 때만: 농협(NH, 올바른SAFE) | 롯데(KT DC PLUS, SKYPASS, LOCA) | 신한(신한카드, Deep, 네이버페이 신한카드) | 삼성 | 현대(코스트코 현대카드) | 국민(KB) | 기타.',
     '- "네이버페이", "카카오페이"처럼 결제 수단만 보이고 카드사가 안 보이면 "기타".',
     '- 화면 전체가 한 카드사 앱이면 top-level card에 그 카드사를 적으세요. 아니면 null.',
+    '- 같은 카드사에 카드가 여러 장입니다. 화면에 카드 상품명이나 카드 이름이 보이면 각 행(또는 화면 전체)의 product에 보이는 그대로 짧게 적으세요. 롯데: KT DC PLUS, SKYPASS / 삼성: THE Platinum, MILEAGE PLATINUM(스카이패스) / 현대: 코스트코 리워드, 대한항공 070. 보이지 않으면 null.',
     '- 은행 화면의 "롯데카드(주)", "KB카드출금", "삼성카드" 같은 줄은 카드값 출금입니다. card는 null, category는 카드대금.',
     '',
     `[분류 category] bank: ${BANK_CATS.join(', ')} 중 하나. card·mixed: ${CARD_CATS.join(', ')} 중 하나(이체·입금 행은 기타).`,
@@ -54,9 +55,9 @@ function buildPrompt(today, n, hint) {
     '- screen_balance: 화면 위쪽에 계좌 현재 잔액이 크게 보이면 그 숫자, 없으면 null.',
     '',
     '숫자를 확실히 읽을 수 없는 거래는 추측하지 말고 빼고 notes에 적으세요.',
-    'account(bank만): "우리" | "농협" | "신한" | "기타".',
+    'account(bank만): "우리" | "농협" | "신한" | "기타". 신한은행 FNA 통장 화면은 "신한"입니다.',
     'JSON 하나만 답하세요. 설명 문장이나 코드 블록 표시는 쓰지 마세요. 키 순서는 screen, account, card, period, day_totals, list_total, screen_balance, items, notes 입니다. 예:',
-    '{"screen":"mixed","account":null,"card":null,"period":{"from":"2026-11-19","to":"2026-11-20"},"day_totals":[{"date":"2026-11-20","in":7241274,"out":793510}],"list_total":null,"screen_balance":null,"items":[{"date":"2026-11-20","time":null,"desc":"박준뷰티랩","method":"네이버페이","amount":4180,"balance":null,"card":"기타","kind":"spend","category":"쇼핑"},{"date":"2026-11-20","time":null,"desc":"내 계좌 이체 신한 → 우리","method":null,"amount":-250000,"balance":null,"card":null,"kind":"own_transfer","category":"기타"}],"notes":""}',
+    '{"screen":"mixed","account":null,"card":null,"period":{"from":"2026-11-19","to":"2026-11-20"},"day_totals":[{"date":"2026-11-20","in":7241274,"out":793510}],"list_total":null,"screen_balance":null,"items":[{"date":"2026-11-20","time":null,"desc":"박준뷰티랩","method":"네이버페이","amount":4180,"balance":null,"card":"기타","product":null,"kind":"spend","category":"쇼핑"},{"date":"2026-11-20","time":null,"desc":"내 계좌 이체 신한 → 우리","method":null,"amount":-250000,"balance":null,"card":null,"product":null,"kind":"own_transfer","category":"기타"}],"notes":""}',
   ].filter((l) => l !== null).join('\n');
 }
 
@@ -90,7 +91,8 @@ export default async function handler(req, res) {
 
   const content = images.map((b64) => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: String(b64).replace(/^data:image\/\w+;base64,/, '') } }));
   const hint = typeof body.cardHint === 'string' && /^(농협|롯데|신한|삼성|현대|국민)$/.test(body.cardHint) ? body.cardHint : '';
-  content.push({ type: 'text', text: buildPrompt(today, images.length, hint) });
+  const product = typeof body.cardProduct === 'string' ? body.cardProduct.replace(/[^\p{L}\p{N} &()·+\-]/gu, '').slice(0, 40) : '';
+  content.push({ type: 'text', text: buildPrompt(today, images.length, hint, product) });
 
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', {

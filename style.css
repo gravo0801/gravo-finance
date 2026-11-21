@@ -549,3 +549,13 @@ table.rv.rv-card { min-width: 700px; }
 @media (hover: hover) and (min-width: 1200px) {
   #txList > *:hover, #dayList > *:hover { background: var(--soft); }
 }
+
+/* 메모 · 검색 · 신한 FNA */
+.search { width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; background: var(--bg); font-size: 14px; }
+textarea { font: inherit; color: inherit; width: 100%; min-height: 64px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--bg); resize: vertical; line-height: 1.5; font-size: 14px; }
+.fld.wide { grid-column: 1 / -1; }
+.memo-row { margin: -2px 0 8px; padding: 8px 10px; border-left: 3px solid var(--accent); background: var(--soft); border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; cursor: pointer; }
+.memo-ed { display: grid; gap: 8px; margin: 2px 0 10px; }
+.btn.has { color: var(--accent); border-color: var(--accent); }
+.li .x { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.ev small.memo-line { display: block; margin-top: 3px; color: var(--ink); opacity: .85; white-space: pre-wrap; }

@@ -79,8 +79,11 @@
         <button class="chip" data-f="all" aria-pressed="true">전체</button>
         <button class="chip" data-f="woori" aria-pressed="false">우리 통장</button>
         <button class="chip" data-f="nh" aria-pressed="false">농협 통장</button>
+        <button class="chip" data-f="shinhan" aria-pressed="false">신한 FNA</button>
         <button class="chip" data-f="card" aria-pressed="false">카드</button>
+        <button class="chip" data-f="memo" aria-pressed="false">메모 있음</button>
       </div>
+      <input class="search" id="txSearch" type="search" placeholder="내용·메모·분류 검색" aria-label="거래 검색" autocomplete="off">
       <div class="list" id="txList"></div>
     </div>
     <div class="card">
@@ -91,6 +94,7 @@
         <label class="fld">날짜<input id="mDate" type="date" required></label>
         <label class="fld">시각<input id="mTime" type="time"></label>
         <label class="fld">내용<input id="mDesc" type="text" maxlength="60" required></label>
+        <label class="fld wide">메모 (왜 쓴 돈인지)<textarea id="mMemo" rows="2" maxlength="1000" placeholder="예: 어머니 생신 선물, 일회성 지출"></textarea></label>
         <label class="fld">금액 (통장: 입금 +, 출금 − / 카드: 결제액)<input id="mAmt" type="text" inputmode="numeric" placeholder="12900" required></label>
         <label class="fld">거래 후 잔액 (통장만)<input id="mBal" type="text" inputmode="numeric" placeholder="-41505973"></label>
         <button class="btn primary" type="submit">추가</button>
