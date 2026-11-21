@@ -3,9 +3,9 @@ window.GF_SEED = {
   ref: {
     config: { od_limit_man: 15000, rate: 0.052, salary_man: 1400, surplus_man: 300, steps: [3500, 2000, 1000], nh3m_goal_man: 100 },
     limits: [
-      { id: 'nh', name: '농협카드', members: ['농협'], target_man: 35, cap_man: 40, note: '주담대 금리인하 실적 (3개월 100만)' },
-      { id: 'lotte', name: '롯데(KT DC PLUS) 카드', members: ['롯데'], ids: ['lotte'], target_man: 50, cap_man: 80, note: 'KT 통신비 할인 실적 월 50만' },
-      { id: 'shinhan', name: '신한 네이버페이', members: ['신한'], target_man: 0, cap_man: 100, note: '메인 카드, 자동결제 집중' },
+      { id: 'nh', name: '올바른SAFE카드', members: ['농협'], target_man: 35, cap_man: 40, note: '주담대 금리인하 실적 (3개월 100만)' },
+      { id: 'lotte', name: 'KT DC PLUS 롯데카드', members: ['롯데'], ids: ['lotte'], target_man: 50, cap_man: 80, note: 'KT 통신비 할인 실적 월 50만' },
+      { id: 'shinhan', name: '네이버페이 신한카드', members: ['신한'], target_man: 0, cap_man: 100, note: '메인 카드, 자동결제 집중' },
       { id: 'etc', name: '삼성·현대·국민', members: ['삼성', '현대', '국민'], target_man: 0, cap_man: 20, note: '보조 카드 합계' },
     ],
     fixed: [
@@ -46,15 +46,15 @@ window.GF_SEED = {
       { item: '연금저축 (선택)', man: 75, day: 25, note: '복귀 단계에 따라 결정', optional: true },
     ],
     cards: [
-      { id: 'nh', card: '농협', name: '농협카드', product: '올바른SAFE', short: '올바른SAFE', payDay: 14, account: '농협 통장', benefit: '3개월 합 100만 이상 → 농협 주담대 금리 인하', annualFee: 0, memo: '' },
-      { id: 'lotte', card: '롯데', name: '롯데카드 (KT DC PLUS)', product: 'KT DC PLUS', short: 'KT DC PLUS', payDay: 14, account: '우리 → 신한 이전 예정', benefit: '월 50만 이상 → KT 통신비 할인 (월 약 2.2만)', annualFee: 0, memo: '보험·KT 자동결제 포함' },
-      { id: 'lotte-tax', card: '롯데', name: '롯데카드 (SKYPASS)', product: 'SKYPASS 롯데카드 (세금 전용)', short: 'SKYPASS(세금)', payDay: 14, account: '우리 → 신한 이전 예정', benefit: '세금 카드납부 마일리지', annualFee: 0, memo: '세금은 세금적립에서 되돌려 결제' },
-      { id: 'shinhan', card: '신한', name: '신한카드', product: '네이버페이', short: '네이버페이', payDay: 25, account: '신한 통장', benefit: '네이버페이 포인트 적립', annualFee: 0, memo: '메인 카드, 자동결제 집중 (결제일 확인 필요)' },
-      { id: 'samsung', card: '삼성', name: '삼성카드 (THE Platinum)', product: 'THE Platinum Card', short: 'THE Platinum', payDay: 13, account: '우리 → 신한 이전 예정', benefit: '', annualFee: 0, memo: '할부 2026-11 전액 상환, 주로 유류비' },
-      { id: 'samsung-mile', card: '삼성', name: '삼성카드 (MILEAGE PLATINUM)', product: '삼성카드 & MILEAGE PLATINUM (스카이패스)', short: 'MILEAGE PLATINUM', payDay: 0, account: '', benefit: '', annualFee: 0, memo: '결제일·결제계좌를 입력해 주세요' },
-      { id: 'hyundai', card: '현대', name: '현대카드 (코스트코)', product: '코스트코 리워드 현대카드', short: '코스트코', payDay: 12, account: '우리 → 신한 이전 예정', benefit: '코스트코 결제', annualFee: 0, memo: '' },
-      { id: 'hyundai-kal', card: '현대', name: '현대카드 (대한항공)', product: '대한항공카드 070', short: '대한항공 070', payDay: 0, account: '', benefit: '', annualFee: 0, memo: '결제일·결제계좌를 입력해 주세요' },
-      { id: 'kb', card: '국민', name: '국민카드', product: '', short: '', payDay: 14, account: '우리 → 신한 이전 예정', benefit: '', annualFee: 0, memo: '거의 안 씀' },
+      { id: 'nh', card: '농협', name: '올바른SAFE카드', payDay: 14, account: '농협 통장', benefit: '3개월 합 100만 이상 → 농협 주담대 금리 인하', annualFee: 0, memo: '', perks: ['농협 주담대 금리 인하 실적 카드 (3개월 합산 100만원 이상)', '적립·할인 상세는 공식 안내를 확인하지 못했습니다. 편집에서 직접 입력해 주세요.'], perksNote: '', product: '올바른SAFE카드' },
+      { id: 'lotte', card: '롯데', name: 'KT DC PLUS 롯데카드', payDay: 14, account: '우리 → 신한 이전 예정', benefit: '월 50만 이상 → KT 통신비 할인 (월 약 2.2만)', annualFee: 0, memo: '보험·KT 자동결제 포함', perks: ['월 50만원 이상 사용 시 KT 통신요금 할인 (월 약 2.2만원)', '보험·KT 자동결제를 이 카드로 모아 실적 채움'], perksNote: '내 메모 기준 (카드사 공식 안내로 확인하지 않음)', product: 'KT DC PLUS 롯데카드' },
+      { id: 'lotte-tax', card: '롯데', name: 'SKYPASS 롯데카드 (세금 전용)', payDay: 14, account: '우리 → 신한 이전 예정', benefit: '세금 카드납부 마일리지', annualFee: 0, memo: '세금은 세금적립에서 되돌려 결제', perks: ['세금 카드 납부 전용 · 대한항공 스카이패스 마일리지 적립', '세금은 세금적립 통장에서 되돌려 결제'], perksNote: '내 메모 기준 (카드사 공식 안내로 확인하지 않음)', product: 'SKYPASS 롯데카드 (세금 전용)' },
+      { id: 'shinhan', card: '신한', name: '네이버페이 신한카드', payDay: 25, account: '신한 통장', benefit: '네이버페이 포인트 적립', annualFee: 0, memo: '메인 카드, 자동결제 집중 (결제일 확인 필요)', perks: ['국내외 온·오프라인 결제액의 1% 네이버페이포인트 적립 (전월실적·한도 없음)', '네이버페이 간편결제 온라인 가맹점 추가 2% (월 결제 50만원까지, 최대 1만P)', '포인트는 다음 달 15일 적립', '신규 발급은 중단됨 (기존 카드 재발급 가능)'], perksNote: '공개 정보 기준 · 2026-11 확인 · 변경될 수 있음', product: '네이버페이 신한카드' },
+      { id: 'samsung', card: '삼성', name: 'THE Platinum Card', payDay: 13, account: '우리 → 신한 이전 예정', benefit: '', annualFee: 0, memo: '할부 2026-11 전액 상환, 주로 유류비', perks: ['국내외 1% 기본 적립, 해외·항공 +2%, 골프·주유·호텔 +4%', '아멕스 THE PLATINUM 서비스: 공항 라운지·발렛파킹·공항 커피/리무진', '연회비 70만원 (기프트 60만원 상당 포함) · 2023-04 이후 신규 발급 중단'], perksNote: '삼성 아멕스 플래티늄카드 기준 · 다른 카드라면 편집에서 수정 · 공개 정보 기준 · 2026-11 확인 · 변경될 수 있음', product: 'THE Platinum Card' },
+      { id: 'samsung-mile', card: '삼성', name: '삼성카드 & MILEAGE PLATINUM (스카이패스)', payDay: 0, account: '', benefit: '', annualFee: 0, memo: '결제일·결제계좌를 입력해 주세요', perks: ['국내외 1천원당 스카이패스 1마일 (전월실적·적립한도 없음)', '백화점·주유·카페·편의점·택시 중 택1 추가 +1마일 (월 2,000마일 한도)', '인천공항 마티나 라운지 연 2회, 발렛파킹 월 1회 (전월 30만원 이상)', '연회비 약 4.7~4.9만원'], perksNote: '공개 정보 기준 · 2026-11 확인 · 변경될 수 있음', product: '삼성카드 & MILEAGE PLATINUM (스카이패스)' },
+      { id: 'hyundai', card: '현대', name: '코스트코 리워드 현대카드', payDay: 12, account: '우리 → 신한 이전 예정', benefit: '코스트코 결제', annualFee: 0, memo: '', perks: ['모든 가맹점 1% 리워드 포인트 (한도 없음)', '코스트코 매장 +2%, 온라인몰 +3% (연 50만 포인트 한도)', '연회비 2만원 · 전월실적 50만원 (2025-12 리뉴얼)'], perksNote: '공개 정보 기준 · 2026-11 확인 · 변경될 수 있음', product: '코스트코 리워드 현대카드' },
+      { id: 'hyundai-kal', card: '현대', name: '대한항공카드 070', payDay: 0, account: '', benefit: '', annualFee: 0, memo: '결제일·결제계좌를 입력해 주세요', perks: ['국내외 1천원당 대한항공 1마일, 특정 업종 2마일', '인천공항 T2 마티나 라운지 무료, 웰컴 5천 마일', '스타벅스 등 건당 500원 할인, 제휴 주차장 주말 무료', '연회비 7만원'], perksNote: '조건은 현대카드에서 최신 내용을 확인해 주세요 · 2026-11 확인', product: '대한항공카드 070' },
+      { id: 'kb', card: '국민', name: 'ROVL 시그니쳐 스카이패스 카드', payDay: 14, account: '우리 → 신한 이전 예정', benefit: '', annualFee: 300000, memo: '거의 안 씀', perks: ['모든 가맹점 1천원당 대한항공 1마일 적립 (전월실적 없음 표기)', '대한항공 동반자 이코노미 왕복항공권·좌석 승급 등 프리미엄 서비스', '롯데호텔 할인, 발레파킹 월 5회', '연회비 30만원 · 신규 발급 중단'], perksNote: '적립률 표기가 자료마다 달라 KB국민카드에서 확인해 주세요 · 2026-11 확인', product: 'ROVL 시그니쳐 스카이패스 카드' },
     ],
     tax: {
       monthly_man: 100, reserve_man: null, reserveAt: null,

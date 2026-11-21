@@ -559,3 +559,5 @@ textarea { font: inherit; color: inherit; width: 100%; min-height: 64px; border:
 .btn.has { color: var(--accent); border-color: var(--accent); }
 .li .x { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .ev small.memo-line { display: block; margin-top: 3px; color: var(--ink); opacity: .85; white-space: pre-wrap; }
+
+.perks{margin:8px 0 0;font-size:13px}.perks ul{margin:4px 0 4px;padding-left:18px}.perks li{margin:2px 0;line-height:1.45}.perks small{display:block}
