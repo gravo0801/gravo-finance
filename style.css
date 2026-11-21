@@ -29,9 +29,9 @@ button, input, select { font: inherit; color: inherit; }
 .tabs { display: flex; gap: 4px; }
 .tab { flex: 1; border: 0; background: none; padding: 10px 0 9px; font-size: 14px; color: var(--mute); border-bottom: 2px solid transparent; cursor: pointer; }
 .tab[aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
-main { padding-block: 16px 48px; display: grid; gap: 16px; }
+main { padding-block: 16px 48px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 section[data-view] { display: grid; gap: 16px; min-width: 0; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
 .card h2 { font-size: 16px; margin: 0; font-weight: 600; text-wrap: balance; }
 .sub { color: var(--mute); font-size: 13px; margin: 0; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -51,7 +51,7 @@ section[data-view] { display: grid; gap: 16px; min-width: 0; }
 .switch { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--mute); }
 .switch input { width: 18px; height: 18px; accent-color: var(--accent); }
 /* queue */
-.q { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; gap: 10px; min-width: 0; background: var(--panel); }
+.q { border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; background: var(--panel); }
 .q-head { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
 .q-thumb { width: 64px; height: 84px; border-radius: 8px; object-fit: cover; object-position: top; background: var(--line); flex: none; border: 1px solid var(--line); cursor: zoom-in; }
 .q-info { display: grid; gap: 4px; min-width: 0; flex: 1; }
@@ -104,7 +104,7 @@ table.rv td.ck input { width: 18px; height: 18px; accent-color: var(--accent); }
 .track u { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); }
 .lim-sub { font-size: 12px; color: var(--mute); }
 /* lists */
-.list { display: grid; }
+.list { display: grid; grid-template-columns: minmax(0, 1fr); }
 .li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 10px 0; border-bottom: 1px solid var(--line); align-items: center; min-width: 0; }
 .li:last-child { border-bottom: 0; }
 .li .d { font-size: 14px; min-width: 0; overflow-wrap: anywhere; }
@@ -422,3 +422,7 @@ details.more summary:hover { color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
   .btn, .tab, .chip, .cal button.day-c, .fld input, .fld select { transition: none; }
 }
+
+/* 좁은 화면(폴드 커버 화면)에서 표가 칸을 밀어내지 않게 */
+.q > *, .card > *, .list > * { min-width: 0; }
+body { overflow-x: clip; }
