@@ -208,6 +208,8 @@
     <label class="fld">동기화 코드 (모든 기기에서 같은 값)<input id="sCode" type="text" autocomplete="off"></label>
     <label class="fld">인식 암호 (Vercel의 APP_PASSCODE를 설정했을 때만)<input id="sPass" type="password" autocomplete="off"></label>
     <label class="fld">개인 Anthropic API 키 (Vercel에 키가 없을 때만, 이 기기에만 저장)<input id="sKey" type="password" autocomplete="off" placeholder="sk-ant-..."></label>
+    <button class="btn" type="button" id="sPush">이 기기 데이터를 클라우드로 올리기</button>
+    <p class="sub">다른 기기에 데이터가 안 보일 때, 데이터가 제대로 보이는 기기에서 누르세요. 현재 코드의 클라우드 데이터를 이 기기 기준으로 덮어씁니다.</p>
     <div class="row">
       <button class="btn primary" value="save" id="sSave">저장</button>
       <button class="btn" value="cancel" formnovalidate>닫기</button>

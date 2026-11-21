@@ -5,7 +5,7 @@
 
 const FB = { apiKey: 'AIzaSyAN7s01gb9AsmeMVdgWGY6pllX9cm1SLJ0', projectId: 'endoapp-cc066' };
 const COLL = 'gravo_finance_v2';
-const LS = { code: 'gf_mt_code', pass: 'gf_mt_pass', key: 'gf_mt_userkey', cache: 'gf_mt_cache', auto: 'gf_mt_autosave' };
+const LS = { code: 'gf_mt_code', pass: 'gf_mt_pass', key: 'gf_mt_userkey', cache: 'gf_mt_cache', auto: 'gf_mt_autosave', push: 'gf_mt_push' };
 const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } };
 const lsSet = (k, v) => { try { if (v == null || v === '') localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { } };
 
@@ -88,6 +88,30 @@ async function migrateOld(db) {
     return out;
   } catch (e) { return {}; }
 }
+// 이 기기가 가진 데이터를 현재 동기화 코드의 클라우드 문서로 올립니다(덮어쓰기). 기준은 "이 기기에 보이는 데이터".
+async function copyImgs(ids, srcCode) {
+  for (const id of ids) {
+    try {
+      let img = null; try { img = localStorage.getItem('gf_mt_img:' + id); } catch (e) { }
+      if (!img && S.thumbs[id]) img = S.thumbs[id];
+      if (!img && srcCode !== S.code) { const sn = await S.fb.collection(COLL).doc(srcCode + '__img__' + id).get(); if (sn.exists) img = sn.data().img; }
+      if (img) await S.fb.collection(COLL).doc(S.code + '__img__' + id).set({ img, at: Date.now() });
+    } catch (e) { console.warn(e); }
+  }
+}
+async function pushToCloud(srcCode) {
+  let src = null;
+  try { const raw = localStorage.getItem(LS.cache + ':' + srcCode); if (raw) src = JSON.parse(raw); } catch (e) { }
+  if (!src && S.fb && srcCode !== S.code) { try { const sn = await S.fb.collection(COLL).doc(srcCode + '__mt').get(); if (sn.exists) src = sn.data(); } catch (e) { } }
+  const n = src ? Object.keys(src.tx || {}).length : 0;
+  if (!n) { lsSet(LS.push, ''); toast('이 기기에는 올릴 데이터가 없습니다.'); return false; }
+  const data = { ref: src.ref || {}, tx: src.tx || {}, captures: src.captures || {} };
+  try { await S.docRef.set(Object.assign({}, data, { createdAt: Date.now(), pushedAt: Date.now() })); }
+  catch (e) { console.warn(e); setSync('error', '클라우드에 올리지 못했습니다 (' + (e.code || e.message) + ').'); toast('클라우드에 올리지 못했습니다.'); return false; }
+  await copyImgs(Object.keys(data.captures), srcCode);
+  lsSet(LS.push, ''); S.data = data; S.ready = true; cacheSave(); render();
+  toast('이 기기 데이터를 올렸습니다 · 거래 ' + n + '건'); return true;
+}
 async function connect() {
   cacheLoad(); S.ready = Object.keys(S.data.ref || {}).length > 0; render();
   if (typeof firebase === 'undefined') { setSync('off', '동기화 서비스를 불러오지 못했습니다. 이 기기에만 저장 중입니다.'); if (!S.ready) { S.data = seedData(); cacheSave(); S.ready = true; render(); } ensureRef(); return; }
@@ -96,6 +120,7 @@ async function connect() {
     let app; try { app = firebase.app('gravo-mt'); } catch (e) { app = firebase.initializeApp({ apiKey: FB.apiKey, projectId: FB.projectId, authDomain: FB.projectId + '.firebaseapp.com' }, 'gravo-mt'); }
     S.fb = firebase.firestore(app);
     S.docRef = S.fb.collection(COLL).doc(S.code + '__mt');
+    const pushSrc = lsGet(LS.push, ''); if (pushSrc) await pushToCloud(pushSrc);
     const snap = await S.docRef.get();
     if (!snap.exists) {
       const base = S.ready ? S.data : seedData();
@@ -958,11 +983,22 @@ $('manForm').addEventListener('submit', async (e) => {
   await store.setTx(uniqueKey(t, (k) => !!S.data.tx[k]), t); $('mAmt').value = ''; $('mBal').value = ''; $('mDesc').value = ''; toast('추가했습니다.');
 });
 $('openSettings').addEventListener('click', () => { $('sCode').value = S.code; $('sPass').value = lsGet(LS.pass, ''); $('sKey').value = lsGet(LS.key, ''); $('settings').showModal(); });
+$('sPush').addEventListener('click', async () => {
+  const n = Object.keys(S.data.tx || {}).length;
+  if (!S.docRef) { toast('동기화에 연결되지 않았습니다.'); return; }
+  let ok = false; try { ok = window.confirm('이 기기에 보이는 데이터(거래 ' + n + '건)로 클라우드의 현재 코드 데이터를 덮어씁니다.\n다른 기기에서 입력한 최신 내용이 있다면 사라집니다. 계속할까요?'); } catch (e) { }
+  if (ok) { $('sPush').disabled = true; await pushToCloud(S.code); $('sPush').disabled = false; }
+});
 $('setForm').addEventListener('submit', (e) => {
   if (e.submitter && e.submitter.value !== 'save') return;
   lsSet(LS.pass, $('sPass').value.trim()); lsSet(LS.key, $('sKey').value.trim());
   const code = $('sCode').value.trim();
-  if (code && code !== S.code) { if (!/^[A-Za-z0-9_-]{4,40}$/.test(code)) { toast('동기화 코드는 영문·숫자 4~40자입니다.'); return; } lsSet(LS.code, code); location.reload(); return; }
+  if (code && code !== S.code) {
+    if (!/^[A-Za-z0-9_-]{4,40}$/.test(code)) { toast('동기화 코드는 영문·숫자 4~40자입니다.'); return; }
+    const n = Object.keys(S.data.tx || {}).length; let copy = false;
+    try { copy = n > 0 && window.confirm('이 기기의 데이터(거래 ' + n + '건)를 새 코드로 옮길까요?\n\n[확인] 이 기기 데이터를 새 코드로 복사 (새 코드에 이미 있는 데이터는 덮어씀)\n[취소] 새 코드에 이미 있는 데이터를 그대로 사용'); } catch (e) { }
+    lsSet(LS.push, copy ? S.code : ''); lsSet(LS.code, code); location.reload(); return;
+  }
   toast('설정을 저장했습니다.');
 });
 // 창 크기뿐 아니라 PC 배치가 바뀌어 차트 칸 폭이 달라질 때도 다시 그림
