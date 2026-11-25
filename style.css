@@ -480,8 +480,8 @@ table.rv.rv-card { min-width: 700px; }
 }
 /* 펼친 폴드(안쪽 큰 화면)·태블릿: 홈 아래쪽 카드 2열 */
 @media (min-width: 760px) {
-  #home { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  #home > :nth-child(-n+3) { grid-column: 1 / -1; }
+  #home, #woori, #nh { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  #home > :nth-child(-n+3), #woori > :nth-child(-n+2), #woori > :nth-child(4), #nh > :nth-child(-n+3) { grid-column: 1 / -1; }
 }
 
 /* ── PC·큰 모니터 ─────────────────────────────────────────────
@@ -498,14 +498,25 @@ table.rv.rv-card { min-width: 700px; }
   .top-in { padding-block: 14px 6px; }
   .brand { font-size: 19px; }
 
-  /* 홈: 위에 요약 숫자, 붙여넣기 | 잔액 추이, 카드 사용액 | 통장 흐름 */
+  /* 홈: 위에 요약 숫자, 붙여넣기 | 돈의 흐름, 카드 사용액 | 통장 흐름 */
   #home { grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-areas: "kpi kpi kpi" "paste chart chart" "lim flow flow"; }
+    grid-template-areas: "kpi kpi kpi" "paste map map" "lim flow flow"; }
   #home > :nth-child(1) { grid-area: paste; } #home > :nth-child(2) { grid-area: kpi; }
-  #home > :nth-child(3) { grid-area: chart; } #home > :nth-child(4) { grid-area: lim; } #home > :nth-child(5) { grid-area: flow; }
+  #home > :nth-child(3) { grid-area: map; } #home > :nth-child(4) { grid-area: lim; } #home > :nth-child(5) { grid-area: flow; }
   #home > :nth-child(1) .paste { min-height: 220px; }
   /* 인식 결과를 검수할 때는 붙여넣기 칸을 전체 폭으로 */
-  #home:has(#queue .q) { grid-template-areas: "kpi kpi kpi" "paste paste paste" "chart chart chart" "lim flow flow"; }
+  #home:has(#queue .q) { grid-template-areas: "kpi kpi kpi" "paste paste paste" "map map map" "lim flow flow"; }
+  #home > *, #woori > *, #nh > * { grid-column: auto; }
+  /* 우리: 요약 | 차트(넓게) + 흑자별 표 | 출금표 + 월말 점검 | 흐름 */
+  #woori { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); grid-template-areas: "kpi kpi" "chart pay" "tbl mo" "flow mo"; }
+  #woori > :nth-child(1) { grid-area: kpi; } #woori > :nth-child(2) { grid-area: chart; } #woori > :nth-child(3) { grid-area: pay; }
+  #woori > :nth-child(4) { grid-area: tbl; } #woori > :nth-child(5) { grid-area: mo; } #woori > :nth-child(6) { grid-area: flow; }
+  /* 농협: 요약 | 리듬 + 규칙 | 묶음(넓게) | 주담대 + 흐름 */
+  #nh { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); grid-template-areas: "kpi kpi" "rhy rule" "bk bk" "mort flow"; }
+  #nh > :nth-child(1) { grid-area: kpi; } #nh > :nth-child(2) { grid-area: rhy; } #nh > :nth-child(3) { grid-area: bk; }
+  #nh > :nth-child(4) { grid-area: mort; } #nh > :nth-child(5) { grid-area: rule; } #nh > :nth-child(6) { grid-area: flow; }
+  .bks { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .fbk { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   #home:has(#queue .q) > :nth-child(1) .paste { min-height: 132px; }
 
   /* 검수: 왼쪽 원본 캡처(스크롤), 오른쪽 인식 표 */
@@ -533,12 +544,11 @@ table.rv.rv-card { min-width: 700px; }
   #tx { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); grid-template-rows: auto 1fr; grid-template-areas: "list form" "list log"; align-items: start; }
   #tx > :nth-child(1) { grid-area: list; } #tx > :nth-child(2) { grid-area: form; } #tx > :nth-child(3) { grid-area: log; }
 
-  /* 세금·계획: 2단 */
-  #tax { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); grid-template-rows: auto auto 1fr; align-items: start;
-    grid-template-areas: "kpi kpi" "sched res" "sched paid"; }
-  #tax > :nth-child(1) { grid-area: kpi; } #tax > :nth-child(2) { grid-area: res; } #tax > :nth-child(3) { grid-area: sched; } #tax > :nth-child(4) { grid-area: paid; }
-  #plan { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
-  #plan > :nth-child(1), #plan > details { grid-column: 1 / -1; }
+  /* 세금: 요약 | 2027 예정(넓게) + 판정 | 결산 + 메모 | 납부 기록 */
+  #tax { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); align-items: start;
+    grid-template-areas: "kpi kpi" "sched res" "year res" "year notes" "paid paid"; }
+  #tax > :nth-child(1) { grid-area: kpi; } #tax > :nth-child(2) { grid-area: res; } #tax > :nth-child(3) { grid-area: sched; }
+  #tax > :nth-child(4) { grid-area: year; } #tax > :nth-child(5) { grid-area: paid; } #tax > :nth-child(6) { grid-area: notes; }
   #cards > .card { grid-column: 1 / -1; }
 }
 @media (min-width: 1600px) {
@@ -561,3 +571,74 @@ textarea { font: inherit; color: inherit; width: 100%; min-height: 64px; border:
 .ev small.memo-line { display: block; margin-top: 3px; color: var(--ink); opacity: .85; white-space: pre-wrap; }
 
 .perks{margin:8px 0 0;font-size:13px}.perks ul{margin:4px 0 4px;padding-left:18px}.perks li{margin:2px 0;line-height:1.45}.perks small{display:block}
+
+/* ===== 2027 통장 관리: 돈의 흐름 · 출금 묶음 · 세금 결산 ===== */
+.card h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--mute); }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.fmap { display: grid; gap: 4px; justify-items: stretch; }
+.fn { display: grid; gap: 2px; text-align: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); font: inherit; color: inherit; min-width: 0; }
+button.fn { cursor: pointer; } button.fn:hover { border-color: var(--accent); }
+.fn b { font-size: 13px; font-weight: 600; }
+.fn .big { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fn small { font-size: 12px; color: var(--mute); line-height: 1.45; overflow-wrap: anywhere; }
+.fn.woori { border-color: var(--brass); }
+.fn.nh { background: var(--soft); border-color: var(--accent); border-width: 1.5px; }
+.fn.side { border-style: dashed; }
+.frow { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 8px; }
+.farr { display: flex; gap: 8px; justify-content: center; align-items: center; color: var(--mute); font-size: 14px; line-height: 1.1; }
+.farr small { font-size: 12px; }
+.fbk { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.fbk .fn { text-align: left; }
+.fbk .fn.b-invest { border-color: var(--auto); }
+.lim-head small { color: var(--mute); font-size: 12px; font-weight: 400; }
+.lim-row.off { opacity: .6; }
+.bks { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.bk { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 6px; min-width: 0; align-content: start; }
+.bk-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.bk-h span { font-variant-numeric: tabular-nums; font-weight: 700; }
+.bk table.tb { font-size: 13px; } .bk table.tb td { padding: 6px 4px; } .bk table.tb th { padding: 4px; }
+.bk td small.sub, .tb td small.sub { display: block; font-size: 11px; color: var(--mute); }
+.bk.b-card { grid-column: 1 / -1; }
+.rules { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 13px; line-height: 1.55; }
+.todo { display: grid; gap: 2px; }
+.td { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; padding: 4px 0; cursor: pointer; }
+.td input { margin-top: 3px; }
+.td.done span { text-decoration: line-through; color: var(--mute); }
+.verdict { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+#taxVerdict p { margin: 0; }
+.tb td.neg { color: var(--bad); font-weight: 600; }
+.tb tr.done td { color: var(--mute); }
+.mbars { position: relative; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; height: 170px; align-items: end; }
+.mb { display: grid; grid-template-rows: 16px 1fr 18px; height: 100%; text-align: center; font-size: 11px; color: var(--mute); min-width: 0; }
+.mb small { font-size: 10px; color: var(--ink); white-space: nowrap; overflow: visible; }
+.mbt { position: relative; }
+.mbt i { position: absolute; left: 12%; right: 12%; bottom: 0; background: var(--accent); border-radius: 3px 3px 0 0; }
+.mbt i.est { background: var(--mute); opacity: .55; }
+.mline-100 { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--brass); pointer-events: none; }
+.mline-100 span { position: absolute; right: 0; top: -16px; font-size: 10px; color: var(--brass); background: var(--panel); padding: 0 2px; }
+.guide { font-size: 13px; line-height: 1.55; display: grid; gap: 4px; }
+.guide p { margin: 4px 0 0; } .guide ul { margin: 0; padding-left: 18px; }
+.fld.need select { border-color: var(--warn); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 25%, transparent); }
+.fld.inline { display: flex; align-items: center; gap: 8px; }
+.pick select optgroup { font-weight: 600; }
+table.rv.rv-tax { min-width: 640px; }
+@media (max-width: 640px) {
+  table.rv.rv-tax { min-width: 0; }
+  table.rv.rv-tax tr { grid-template-areas: "ck ds ds am" "ck dt dt stc" ". kd ct ct"; }
+}
+@media (max-width: 420px) {
+  .tab { padding-inline: 7px; font-size: 13.5px; }
+  .frow { grid-template-columns: minmax(0, 1fr); }
+  .fn .big { font-size: 16px; }
+}
+.pick { max-width: 100%; min-width: 0; }
+.pick span { white-space: nowrap; }
+.pick select { min-width: 0; max-width: min(260px, calc(100vw - 110px)); text-overflow: ellipsis; }
+.bk td:first-child { white-space: normal; }
+#wTbl td:first-child, #taxPaid td:nth-child(2), #taxSched td:nth-child(2), #payoff td { white-space: normal; }
+#moTbl { min-width: 600px; }
+#taxSched td:nth-child(2) { min-width: 0; }
+#taxSched input.inl { width: 64px; }
+#taxSched td:nth-child(2) { min-width: 104px; }
+.xbtn { min-width: 30px; padding-inline: 6px; }
+@media (max-width: 420px) { #taxSched th, #taxSched td { padding-inline: 3px; } #taxSched td:first-child { font-size: 13px; } }

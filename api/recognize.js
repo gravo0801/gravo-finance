@@ -7,16 +7,26 @@
 const BANK_CATS = ['급여', '카드대금', '본인이체', '투자·증권', '적금·저축', '대출·이자', '세금', '기타'];
 const CARD_CATS = ['외식·카페', '마트·생활', '쇼핑', '교통·차량', '의료', '통신·구독', '보험', '세금', '기타'];
 
-function buildPrompt(today, n, hint, product) {
+function buildPrompt(today, n, hint, product, acct, doc) {
   return [
-    '한국 은행·카드·토스 앱의 화면 캡처에서 거래 내역을 읽어 JSON으로 옮기세요.',
+    '한국 은행·카드·토스 앱의 화면 캡처나 세금 고지서·납부 화면에서 거래 내역을 읽어 JSON으로 옮기세요.',
     `오늘 날짜는 ${today}입니다. 화면에 연도가 없으면 오늘 기준으로 정하고, 오늘보다 미래가 되면 전년도로 적으세요.`,
     n > 1 ? `이미지 ${n}장은 한 화면을 위에서 아래로 자른 조각이고 경계가 조금 겹칩니다. 겹친 거래는 한 번만 적으세요.` : '이미지는 한 장입니다.',
     hint ? `사용자가 이 캡처를 "${hint}카드" 내역이라고 지정했습니다.${product ? ` 카드 상품은 "${product}"입니다.` : ''}` : '',
+    acct ? `사용자가 이 캡처를 "${acct}" 통장 거래내역이라고 지정했습니다. account는 "${acct}"로 적으세요.` : '',
+    doc === 'tax' ? '사용자가 이 캡처를 세금 자료(고지서·납부 내역)라고 지정했습니다. 세금 화면이면 screen을 "tax"로 하세요.' : '',
     '',
     '[화면 종류 screen]',
-    '"bank" = 은행 계좌 거래내역(입출금과 거래 후 잔액). "card" = 카드사 앱의 이용내역(카드 결제만). "mixed" = 토스 "전체" 탭처럼 카드·간편결제, 계좌 이체, 송금, 입금이 섞인 목록. "other" = 그 밖.',
-    '우리은행 "우리 SUPER주거래 통장"은 마이너스 통장이라 잔액이 -로 표시됩니다. 잔액의 - 부호를 빠뜨리지 마세요.',
+    '"bank" = 은행 계좌 거래내역(입출금과 거래 후 잔액). "card" = 카드사 앱의 이용내역(카드 결제만). "mixed" = 토스 "전체" 탭처럼 카드·간편결제, 계좌 이체, 송금, 입금이 섞인 목록.',
+    '"tax" = 세금 고지서, 위택스·홈택스·ETAX·지방세 납부 내역, 납부 확인서, 자동차세 연납 신청 화면처럼 세금 자체를 보여주는 화면. (은행 거래목록 안에 세금 출금 줄이 섞인 것은 "bank"입니다.)',
+    '"other" = 거래 목록도 세금 자료도 아닌 화면(앱 첫 화면, 광고, 일반 사진, 잔액만 있는 화면 등). 이때 items는 []로 두고 notes에 무엇이 보이는지 한 줄로 적으세요. 억지로 거래를 만들지 마세요.',
+    '',
+    '[은행 구분 account] (bank 화면)',
+    '- "우리": 우리은행·우리WON뱅킹, "우리 SUPER주거래 통장", 마이너스 통장이라 잔액이 -로 표시됨. 계좌번호가 1002-로 시작하는 경우가 많음.',
+    '- "농협": NH농협·NH스마트뱅킹·NH올원뱅크, "주거래우대통장", 잔액이 +. 계좌번호 3xx-xxxx-xxxx-xx 형태가 많음.',
+    '- "신한": 신한 SOL·신한은행 FNA 통장.',
+    '- 화면에서 은행을 알 수 있는 근거(은행 로고·앱 이름·통장 이름·계좌번호)가 없으면 null로 두세요. 추측하지 마세요.',
+    '- 잔액의 - 부호를 빠뜨리지 마세요.',
     '',
     '[읽는 순서]',
     '1. 먼저 날짜를 찾으세요: 날짜 머리글("20일 금요일", "11.20(금)", "11월 20일"), 행 안의 날짜, 상단 주간 달력에서 선택(강조)된 날짜.',
@@ -56,8 +66,15 @@ function buildPrompt(today, n, hint, product) {
     '- screen_balance: 화면 위쪽에 계좌 현재 잔액이 크게 보이면 그 숫자, 없으면 null.',
     '',
     '숫자를 확실히 읽을 수 없는 거래는 추측하지 말고 빼고 notes에 적으세요.',
-    'account(bank만): "우리" | "농협" | "신한" | "기타". 신한은행 FNA 통장 화면은 "신한"입니다.',
-    'JSON 하나만 답하세요. 설명 문장이나 코드 블록 표시는 쓰지 마세요. 키 순서는 screen, account, card, period, day_totals, list_total, screen_balance, items, notes 입니다. 예:',
+    'account(bank만): "우리" | "농협" | "신한" | "기타" | null.',
+    '',
+    '[세금 화면 tax의 items]',
+    '- 세목마다 한 행: {"date":"YYYY-MM-DD","name":"세목(예: 재산세 1기 (삼성동), 종합소득세, 자동차세 연납)","kind":"국세"|"지방세","amount":숫자,"status":"paid"|"due"}.',
+    '- 이미 낸 세금(납부일·납부완료 표시)은 status "paid"에 date=납부일. 낼 세금(고지서·납부기한)은 "due"에 date=납부기한.',
+    '- 고지서·납부기한은 미래 날짜일 수 있습니다. 연도가 보이면 그대로 적으세요.',
+    '- 본세와 지방교육세 등이 함께 있으면 합계 금액 한 행으로 적고 name에 본세 이름을 쓰세요.',
+    '- tax 화면에서는 balance, card, product, method, category는 생략해도 됩니다.',
+    'JSON 하나만 답하세요. 세금 화면도 같은 키를 쓰고 screen만 "tax"로 합니다. 설명 문장이나 코드 블록 표시는 쓰지 마세요. 키 순서는 screen, account, card, period, day_totals, list_total, screen_balance, items, notes 입니다. 예:',
     '{"screen":"mixed","account":null,"card":null,"period":{"from":"2026-11-19","to":"2026-11-20"},"day_totals":[{"date":"2026-11-20","in":7241274,"out":793510}],"list_total":null,"screen_balance":null,"items":[{"date":"2026-11-20","time":null,"desc":"박준뷰티랩","method":"네이버페이","amount":4180,"balance":null,"card":"기타","product":null,"kind":"spend","category":"쇼핑"},{"date":"2026-11-20","time":null,"desc":"내 계좌 이체 신한 → 우리","method":null,"amount":-250000,"balance":null,"card":null,"product":null,"kind":"own_transfer","category":"기타"}],"notes":""}',
   ].filter((l) => l !== null).join('\n');
 }
@@ -92,8 +109,10 @@ export default async function handler(req, res) {
 
   const content = images.map((b64) => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: String(b64).replace(/^data:image\/\w+;base64,/, '') } }));
   const hint = typeof body.cardHint === 'string' && /^(농협|롯데|신한|삼성|현대|국민)$/.test(body.cardHint) ? body.cardHint : '';
+  const acct = typeof body.acctHint === 'string' && /^(우리|농협|신한)$/.test(body.acctHint) ? body.acctHint : '';
+  const doc = body.docHint === 'tax' ? 'tax' : '';
   const product = typeof body.cardProduct === 'string' ? body.cardProduct.replace(/[^\p{L}\p{N} &()·+\-]/gu, '').slice(0, 40) : '';
-  content.push({ type: 'text', text: buildPrompt(today, images.length, hint, product) });
+  content.push({ type: 'text', text: buildPrompt(today, images.length, hint, product, acct, doc) });
 
   try {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
