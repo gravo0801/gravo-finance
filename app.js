@@ -1,5 +1,5 @@
 "use strict";
-/* Gravo Finance — 마통 관리
+/* Gravo Finance — 통장 관리 (우리 마통 + 농협 주거래)
    저장: Firebase Firestore (동기화 코드별 문서 하나) + 이 기기 localStorage 사본
    인식: /api/recognize (Vercel 서버리스 → Anthropic API) */
 
@@ -13,7 +13,7 @@ const S = {
   data: { ref: {}, tx: {}, captures: {} }, fb: null, docRef: null, code: lsGet(LS.code, 'gravo2026'), sync: 'off', ready: false,
   files: {}, edits: {}, ctl: {}, editId: null, running: new Set(), thumbs: {}, tab: 'home', txf: 'all', armed: null, view: null, surplus: null, qsig: '', calYm: null, calDay: null, cardEdit: null, ensured: false, memoId: null, txq: '',
 };
-const TABS = ['home', 'tx', 'cal', 'cards', 'tax', 'plan'];
+const TABS = ['home', 'woori', 'nh', 'tx', 'cal', 'cards', 'tax'];
 const CARDS = ['농협', '롯데', '신한', '삼성', '현대', '국민', '기타'];
 const CARD_CODE = { '농협': 'nh', '롯데': 'lotte', '신한': 'shinhan', '삼성': 'samsung', '현대': 'hyundai', '국민': 'kb', '기타': 'etc' };
 const ACCT_CODE = { '우리': 'woori', '농협': 'nh', '신한': 'shinhan', '기타': 'etc' };
@@ -175,7 +175,6 @@ function series() {
   txs().filter((t) => t.type === 'bank' && t.account === '우리' && Number.isFinite(t.balance)).sort(txSort).forEach((t) => m.set(t.date, { date: t.date, v: t.balance, src: '캡처·기록' }));
   return [...m.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
 }
-function simulate(debtMan, sMan, rate) { let b = debtMan, m = 0; const path = []; while (b > 0 && m < 120) { b = b * (1 + rate / 12) - sMan; m++; path.push(Math.max(0, b)); } return { months: m, path }; }
 const addMonths = (ds, n) => { const d = new Date(ds + 'T00:00:00'); const x = new Date(d.getFullYear(), d.getMonth() + n, Math.min(d.getDate(), 28)); return x.getFullYear() + '-' + pad(x.getMonth() + 1) + '-' + pad(x.getDate()); };
 // 월 합계 행은 같은 카드·같은 달에 개별 내역이 있으면 집계에서 뺍니다 (이중 집계 방지)
 function cardTxs() {
@@ -216,35 +215,19 @@ function cardChoices() {
   return out;
 }
 const splitCardVal = (v) => { const [card, id] = String(v || '').split('|'); return { card: card || '', id: id || '' }; };
+// 업로드 '자료' 지정값: '' 자동 · 'acct:농협' 통장 · 'tax' 세금 자료 · '롯데|lotte' 카드
+function parseHint(v) { const s = String(v || ''); if (!s) return { kind: '' }; if (s === 'tax') return { kind: 'tax' }; if (s.startsWith('acct:')) return { kind: 'acct', acct: s.slice(5) }; const c = splitCardVal(s); return { kind: 'card', card: c.card, id: c.id }; }
+const hintLabel = (v) => { const p = parseHint(v); return p.kind === 'tax' ? '세금 자료' : p.kind === 'acct' ? acctLabel(p.acct) : p.kind === 'card' ? cardLabel(p.card, p.id) : ''; };
 function cardOptions(selVal) { return cardChoices().map((o) => h('option', { value: o.v, text: o.label, selected: o.v === selVal })); }
 
 function renderTop(cur) { $('topBal').replaceChildren(cur ? man(cur.v) + '만' : '—', h('small', { text: cur ? cur.date + ' 마통 잔액' : '마통 잔액' })); }
-function renderKpis(ser) {
-  const c = cfg(); const k = $('kpis'); k.replaceChildren(); const cur = ser[ser.length - 1];
-  if (!cur) { k.append(h('div', { class: 'kpi' }, h('span', { class: 'l', text: '마통 잔액' }), h('span', { class: 'v', text: '—' }), h('span', { class: 's', text: S.ready ? '아직 잔액 기록이 없습니다' : '불러오는 중…' }))); return; }
-  const debt = -cur.v / 1e4; const used = debt / c.od_limit_man * 100;
-  const prevEnd = [...ser].reverse().find((p) => ymOf(p.date) < ymOf(cur.date)); const chg = prevEnd ? cur.v - prevEnd.v : null;
-  k.append(h('div', { class: 'kpi' }, h('span', { class: 'l', text: '마통 잔액' }), h('span', { class: 'v' }, man(cur.v), h('small', { text: '만 원' })),
-    h('span', { class: 's' + (chg == null ? '' : chg >= 0 ? ' ok' : ' bad'), text: chg == null ? cur.date + ' 기준' : '전월 말 대비 ' + signed(chg) + '만' })));
-  const ub = h('i', { class: used >= 60 ? 'bad' : used >= 35 ? 'warn' : '' }); ub.style.width = Math.min(100, Math.max(0, used)) + '%';
-  k.append(h('div', { class: 'kpi' }, h('span', { class: 'l', text: '한도 사용률' }), h('span', { class: 'v' }, used.toFixed(1), h('small', { text: '%' })), h('div', { class: 'bar' }, ub), h('span', { class: 's', text: '남은 한도 ' + manv(c.od_limit_man - debt) + '만' })));
-  const step = (c.steps || []).filter((s) => s < debt).sort((a, b) => b - a)[0];
-  k.append(h('div', { class: 'kpi' }, h('span', { class: 'l', text: '월 이자 (추정)' }), h('span', { class: 'v' }, (Math.max(0, debt) * c.rate / 12).toFixed(1), h('small', { text: '만 원' })),
-    h('span', { class: 's', text: step != null ? '다음 단계 ' + manv(step) + '만까지 ' + manv(debt - step) + '만' : '연 ' + (c.rate * 100).toFixed(1) + '% 가정' })));
-  const lim = refList('limits').find((l) => l.id === 'nh'); const ms = monthsBack(3);
-  const nh = cardUsed(lim ? lim.members : ['농협'], ms) / 1e4; const goal = c.nh3m_goal_man; const p = nh / goal * 100;
-  const nb = h('i', { class: p >= 100 ? '' : p >= 60 ? 'warn' : 'bad' }); nb.style.width = Math.min(100, p) + '%';
-  k.append(h('div', { class: 'kpi' }, h('span', { class: 'l', text: '올바른SAFE카드 3개월 실적' }), h('span', { class: 'v' }, nh.toFixed(1), h('small', { text: '/ ' + goal + '만' })), h('div', { class: 'bar' }, nb),
-    h('span', { class: 's', text: ms[2].slice(2).replace('-', '.') + '~' + ms[0].slice(2).replace('-', '.') + (p >= 100 ? ' · 달성' : ' · ' + Math.round(goal - nh) + '만 남음') })));
-}
-
 /* ================= render: chart ================= */
 function renderChart(ser) {
   const el = $('chart'); el.replaceChildren();
   if (!ser.length || typeof d3 === 'undefined') { el.append(h('p', { class: 'empty', text: '잔액 기록이 생기면 그래프가 그려집니다.' })); return; }
   const c = cfg(); const sMan = S.surplus ?? c.surplus_man; const last = ser[ser.length - 1];
-  $('lgProj').textContent = '상환 예상 (월 ' + sMan + '만 원 잔류)';
-  const P = simulate(-last.v / 1e4, sMan, c.rate).path.map((v, i) => ({ date: addMonths(last.date, i + 1), v: -v * 1e4, src: '상환 예상' }));
+  $('lgProj').textContent = '상환 예상 (월 흑자 ' + sMan + '만)';
+  const P = simulate(-last.v / 1e4, sMan, c.rate, last.date).path.map((v, i) => ({ date: addMonths(last.date, i + 1), v: -v * 1e4, src: '상환 예상' }));
   const parse = (d) => new Date(d + 'T00:00:00');
   const A = ser.map((p) => ({ ...p, t: parse(p.date) })); const B = P.map((p) => ({ ...p, t: parse(p.date) })); const all = [...A, ...B];
   const W = Math.max(300, el.clientWidth || 600), H = W < 560 ? 240 : 300, m = { t: 14, r: 44, b: 26, l: 48 };
@@ -276,6 +259,68 @@ function renderChart(ser) {
     .on('pointerleave', () => { dot.style('display', 'none'); tip.style.display = 'none'; });
 }
 
+/* ================= 2027 자금 흐름 (월급 → 우리 마통 → 농협) ================= */
+const BUCKETS = { woori: '우리 직접 출금', move: '농협으로 이체', d12: '12일 자동이체', d28: '28일 이체', card: '카드대금 12~14일', invest: '투자·적립 25~26일', reserve: '예비비' };
+const fx = (v, d = 1) => (Math.round(v * 10 ** d) / 10 ** d).toLocaleString('ko-KR', { maximumFractionDigits: d });
+function curDebt() { const ser = series(); const cur = ser[ser.length - 1]; return cur ? Math.max(0, -cur.v / 1e4) : 0; }
+// 계획 수치: auto 항목(이자·농협 이체·ISA 잔여)은 현재 잔액과 흑자에서 계산합니다.
+function flowCtx(sMan) {
+  const c = cfg(); const s = sMan == null ? +c.surplus_man : +sMan; const debt = curDebt();
+  const interest = debt * c.rate / 12; const transfer = +c.salary_man - s; const items = refList('flow');
+  const cards = d3.sum(refList('limits'), (l) => +l.cap_man || 0);
+  const nhFixed = d3.sum(items.filter((f) => f.acct === '농협' && f.man != null), (f) => +f.man || 0);
+  const residual = Math.max(0, transfer - nhFixed - cards);
+  const val = (f) => (f.auto === 'interest' ? interest : f.auto === 'transfer' ? transfer : f.auto === 'residual' ? residual : +f.man || 0);
+  const wooriSave = (ym) => d3.sum(items.filter((f) => f.acct === '우리' && f.man != null && (!f.until || ym <= f.until)), (f) => +f.man || 0);
+  const bucket = (b) => items.filter((f) => f.bucket === b);
+  const bsum = (b) => (b === 'card' ? cards : d3.sum(bucket(b), val));
+  return { c, s, debt, interest, transfer, cards, residual, val, items, bucket, bsum, wooriSave, net: s - wooriSave(todayStr().slice(0, 7)) - interest };
+}
+// 흑자 s를 남길 때 마통 0원까지: 이자는 잔액에 붙고, 우리 직접 적금(만기 전)은 흑자에서 빠집니다.
+function simulate(debtMan, sMan, rate, fromDate) {
+  const F = flowCtx(sMan); let b = debtMan, m = 0, interest = 0; const path = []; const base = fromDate || todayStr();
+  while (b > 0 && m < 120) { const ym = addMonths(base, m + 1).slice(0, 7); const i = b * rate / 12; interest += i; b = b + i - (sMan - F.wooriSave(ym)); m++; path.push(Math.max(0, b)); }
+  return { months: m, path, interest };
+}
+const lastBal = (acct, ym) => txs().filter((t) => t.type === 'bank' && t.account === acct && Number.isFinite(t.balance) && (!ym || ymOf(t.date) <= ym)).sort(txSort).pop() || null;
+
+function renderKpis(ser) {
+  const c = cfg(); const k = $('kpis'); k.replaceChildren(); const cur = ser[ser.length - 1]; const F = flowCtx();
+  const kpi = (l, v, unit, s, cls, bar) => k.append(h('div', { class: 'kpi' }, h('span', { class: 'l', text: l }), h('span', { class: 'v' }, v, unit ? h('small', { text: unit }) : null), bar || null, h('span', { class: 's' + (cls ? ' ' + cls : ''), text: s })));
+  if (cur) {
+    const prevEnd = [...ser].reverse().find((p) => ymOf(p.date) < ymOf(cur.date)); const chg = prevEnd ? cur.v - prevEnd.v : null;
+    kpi('우리 마통 잔액', man(cur.v), '만 원', chg == null ? cur.date + ' 기준' : '전월 말 대비 ' + signed(chg) + '만', chg == null ? '' : chg >= 0 ? 'ok' : 'bad');
+  } else kpi('우리 마통 잔액', '—', '', S.ready ? '아직 잔액 기록이 없습니다' : '불러오는 중…');
+  const nb = lastBal('농협'); const chk = d3.sum(F.bucket('d12'), F.val) + F.cards;
+  kpi('농협 잔액', nb ? man(nb.balance) : '—', nb ? '만 원' : '', nb ? nb.date + ' 기록 · 11일 점검선 ' + fx(chk) + '만' : '농협 통장 캡처를 올리면 표시됩니다', nb ? (nb.balance / 1e4 >= chk ? 'ok' : 'bad') : '');
+  kpi('월 마통 흑자 계획', fx(F.s, 0), '만 원', '순상환 ' + fx(F.net, 0) + ' · 적금 ' + fx(F.wooriSave(todayStr().slice(0, 7)), 0) + ' · 이자 ' + fx(F.interest, 0));
+  const lim = refList('limits').find((l) => l.id === 'nh'); const ms = monthsBack(3);
+  const nh = cardUsed(lim ? lim.members : ['농협'], ms) / 1e4; const goal = c.nh3m_goal_man; const p = nh / goal * 100;
+  const bi = h('i', { class: p >= 100 ? '' : p >= 60 ? 'warn' : 'bad' }); bi.style.width = Math.min(100, p) + '%';
+  kpi('올바른SAFE카드 3개월 실적', nh.toFixed(1), '/ ' + goal + '만', ms[2].slice(2).replace('-', '.') + '~' + ms[0].slice(2).replace('-', '.') + (p >= 100 ? ' · 달성' : ' · ' + Math.round(goal - nh) + '만 남음'), '', h('div', { class: 'bar' }, bi));
+}
+// 홈: 월급 → 우리 마통 → 농협 → 출금 묶음 (보고서 1쪽 그림을 앱 수치로)
+function renderFlowMap() {
+  const F = flowCtx(); const el = $('flowMap'); el.replaceChildren(); const c = F.c;
+  $('mapNote').textContent = '월급은 우리 마통으로 들어와 흑자 ' + fx(F.s, 0) + '만만 남기고 농협으로 넘어갑니다. 농협이 자동이체·카드·투자 이체를 모두 맡습니다. 단위 만 원/월 · ' + (c.basis || '');
+  const node = (title, big, lines, cls, onclick) => h(onclick ? 'button' : 'div', { class: 'fn ' + (cls || ''), type: onclick ? 'button' : null, onclick }, h('b', { text: title }), big ? h('span', { class: 'big', text: big }) : null, lines && lines.length ? h('small', { text: lines.join(' · ') }) : null);
+  const arrow = (t) => h('div', { class: 'farr' }, h('span', { text: '↓' }), t ? h('small', { text: t }) : null);
+  const ym = todayStr().slice(0, 7);
+  const wDirect = F.bucket('woori').filter((f) => !f.until || ym <= f.until).map((f) => f.name.replace(' (추정)', '') + ' ' + fx(F.val(f), 0));
+  el.append(node('월급', fx(c.salary_man) + '만', ['매월 25일 우리 마통 입금']),
+    arrow(),
+    h('div', { class: 'frow' }, node('우리 마통 · 월급 수령·상환', '흑자 ' + fx(F.s, 0) + '만', ['순상환 약 ' + fx(F.net, 0) + '만'], 'woori', () => setTab('woori')), node('마통에서 직접 출금', '', wDirect, 'side')),
+    arrow('약 ' + fx(F.transfer) + '만 이체 (25일)'),
+    node('농협 주거래우대통장 · 지출 전용', '', ['모든 자동이체·카드대금·투자 이체'], 'nh', () => setTab('nh')),
+    arrow());
+  const bk = h('div', { class: 'fbk' });
+  ['d12', 'd28', 'card', 'invest', 'reserve'].forEach((b) => {
+    const lines = b === 'card' ? refList('limits').filter((l) => +l.cap_man > 0).map((l) => (l.short || l.name.replace(/ \(.*\)$/, '').replace(/카드$/, '')) + ' ' + fx(+l.cap_man, 0)) : F.bucket(b).map((f) => f.name.replace(/ \(.*\)$/, '') + ' ' + fx(F.val(f), 0));
+    bk.append(node(BUCKETS[b], fx(F.bsum(b)) + '만', lines, 'b-' + b, () => setTab('nh')));
+  });
+  el.append(bk);
+}
+
 /* ================= render: card limits + flow ================= */
 function renderLimits() {
   const el = $('limits'); el.replaceChildren(); const ym = monthsBack(1)[0];
@@ -285,24 +330,150 @@ function renderLimits() {
     const used = cardUsed(l.members || [], [ym], l.ids) / 1e4; const cap = +l.cap_man || 0; const tgt = +l.target_man || 0; const scale = Math.max(cap, used, 1);
     const fill = h('i', { class: used > cap ? 'bad' : used > cap * 0.85 ? 'warn' : '' }); fill.style.width = Math.min(100, used / scale * 100) + '%';
     const tr = h('div', { class: 'track' }, fill); if (tgt > 0) { const u = h('u'); u.style.left = (tgt / scale * 100) + '%'; tr.append(u); }
-    const left = cap - used; const tgtTxt = tgt > 0 ? (used >= tgt ? ' · 목표 ' + tgt + '만 달성' : ' · 목표까지 ' + (tgt - used).toFixed(1) + '만') : '';
-    el.append(h('div', { class: 'lim-row' }, h('div', { class: 'lim-head' }, h('span', { text: l.name }), h('b', { text: used.toFixed(1) + ' / ' + cap + '만' })), tr,
-      h('div', { class: 'lim-sub', text: (left >= 0 ? '상한까지 ' + left.toFixed(1) + '만' : '상한 ' + (-left).toFixed(1) + '만 초과') + tgtTxt + (l.note ? ' · ' + l.note : '') })));
+    const left = cap - used; const tgtTxt = tgt > 0 ? (used >= tgt ? ' · 실적 ' + tgt + '만 달성' : ' · 실적까지 ' + (tgt - used).toFixed(1) + '만') : '';
+    const plan = cap > 0 ? '고정 ' + fx(+l.fixed_man || 0) + ' + 변동 ' + fx(+l.var_man || 0) : '';
+    const stat = cap === 0 ? (used > 0 ? '사용 중단 카드인데 ' + used.toFixed(1) + '만 사용' : '사용 중단') : (left >= 0 ? '한도까지 ' + left.toFixed(1) + '만' : '한도 ' + (-left).toFixed(1) + '만 초과');
+    el.append(h('div', { class: 'lim-row' + (cap === 0 ? ' off' : '') }, h('div', { class: 'lim-head' }, h('span', {}, l.name, l.role ? h('small', { text: ' ' + l.role }) : null), h('b', { text: used.toFixed(1) + ' / ' + cap + '만' })), tr,
+      h('div', { class: 'lim-sub', text: [stat + tgtTxt, plan, l.note && l.note !== '사용 중단' ? l.note : ''].filter(Boolean).join(' · ') })));
   });
 }
-function renderFlow() {
-  const ym = monthsBack(1)[0]; $('flowTitle').textContent = Number(ym.slice(5)) + '월 우리 통장 흐름';
-  const t = txs().filter((x) => x.type === 'bank' && x.account === '우리' && ymOf(x.date) === ym);
+function flowNums(acct) {
+  const ym = monthsBack(1)[0]; const t = txs().filter((x) => x.type === 'bank' && x.account === acct && ymOf(x.date) === ym);
   const inn = t.filter((x) => x.amount > 0).reduce((a, x) => a + x.amount, 0); const out = t.filter((x) => x.amount < 0).reduce((a, x) => a + x.amount, 0);
-  $('flow').replaceChildren(
-    h('div', {}, h('span', { class: 'sub', text: '들어온 돈' }), h('b', { text: man(inn) + '만', style: 'color:var(--ok)' })),
-    h('div', {}, h('span', { class: 'sub', text: '나간 돈' }), h('b', { text: man(out) + '만', style: 'color:var(--bad)' })),
-    h('div', {}, h('span', { class: 'sub', text: '순변동' }), h('b', { text: signed(inn + out) + '만' })),
-    h('div', {}, h('span', { class: 'sub', text: '기록 건수' }), h('b', { text: t.length + '건' })));
-  const cats = $('cats'); cats.replaceChildren();
-  if (!t.length) { cats.append(h('p', { class: 'empty', text: '이번 달 우리 통장 캡처가 아직 없습니다.' })); return; }
-  const by = d3.rollups(t.filter((x) => x.amount < 0), (v) => -d3.sum(v, (x) => x.amount), (x) => x.category || '기타').sort((a, b) => b[1] - a[1]); const mx = by.length ? by[0][1] : 1;
+  return { ym, t, inn, out };
+}
+function flowCells(n) {
+  return [h('div', {}, h('span', { class: 'sub', text: '들어온 돈' }), h('b', { text: man(n.inn) + '만', style: 'color:var(--ok)' })),
+    h('div', {}, h('span', { class: 'sub', text: '나간 돈' }), h('b', { text: man(n.out) + '만', style: 'color:var(--bad)' })),
+    h('div', {}, h('span', { class: 'sub', text: '순변동' }), h('b', { text: signed(n.inn + n.out) + '만' })),
+    h('div', {}, h('span', { class: 'sub', text: '기록 건수' }), h('b', { text: n.t.length + '건' }))];
+}
+function renderFlow(acct, flowId, catsId, titleId) {
+  const n = flowNums(acct); if (titleId) $(titleId).textContent = Number(n.ym.slice(5)) + '월 ' + acctLabel(acct) + ' 흐름';
+  $(flowId).replaceChildren(...flowCells(n));
+  if (!catsId) return;
+  const cats = $(catsId); cats.replaceChildren();
+  if (!n.t.length) { cats.append(h('p', { class: 'empty', text: '이번 달 ' + acctLabel(acct) + ' 캡처가 아직 없습니다.' })); return; }
+  const by = d3.rollups(n.t.filter((x) => x.amount < 0), (v) => -d3.sum(v, (x) => x.amount), (x) => x.category || '기타').sort((a, b) => b[1] - a[1]); const mx = by.length ? by[0][1] : 1;
   by.forEach(([k, v]) => { const i = h('i'); i.style.width = (v / mx * 100) + '%'; cats.append(h('div', { class: 'cat' }, h('span', { text: k + ' 출금' }), h('div', { class: 't' }, i), h('span', { class: 'n', text: man(v) + '만' }))); });
+}
+function renderHome() {
+  renderFlowMap(); renderLimits();
+  const ym = monthsBack(1)[0]; $('hFlowTitle').textContent = Number(ym.slice(5)) + '월 통장 흐름';
+  $('hFlowW').replaceChildren(...flowCells(flowNums('우리'))); $('hFlowN').replaceChildren(...flowCells(flowNums('농협')));
+}
+
+/* ================= 우리 탭 ================= */
+function renderWoori(ser) {
+  const c = cfg(); const cur = ser[ser.length - 1]; const want = S.surplus ?? +c.surplus_man; const F = flowCtx();
+  const k = $('wKpis'); k.replaceChildren();
+  const kpi = (l, v, unit, s, cls, bar) => k.append(h('div', { class: 'kpi' }, h('span', { class: 'l', text: l }), h('span', { class: 'v' }, v, unit ? h('small', { text: unit }) : null), bar || null, h('span', { class: 's' + (cls ? ' ' + cls : ''), text: s })));
+  if (cur) {
+    const debt = -cur.v / 1e4; const used = debt / c.od_limit_man * 100;
+    const prevEnd = [...ser].reverse().find((p) => ymOf(p.date) < ymOf(cur.date)); const chg = prevEnd ? cur.v - prevEnd.v : null;
+    kpi('마통 잔액', man(cur.v), '만 원', chg == null ? cur.date + ' 기준' : cur.date + ' · 전월 말 대비 ' + signed(chg) + '만', chg == null ? '' : chg >= 0 ? 'ok' : 'bad');
+    const ub = h('i', { class: used >= 60 ? 'bad' : used >= 35 ? 'warn' : '' }); ub.style.width = Math.min(100, Math.max(0, used)) + '%';
+    kpi('한도 사용률', used.toFixed(1), '%', '남은 한도 ' + manv(c.od_limit_man - debt) + '만', '', h('div', { class: 'bar' }, ub));
+    const step = (c.steps || []).filter((s) => s < debt).sort((a, b) => b - a)[0];
+    kpi('월 이자 (추정)', (Math.max(0, debt) * c.rate / 12).toFixed(1), '만 원', step != null ? '다음 단계 ' + manv(step) + '만까지 ' + manv(debt - step) + '만' : '연 ' + (c.rate * 100).toFixed(1) + '% 가정');
+    const done = chg == null ? null : chg / 1e4;
+    kpi('이번 달 순상환', done == null ? '—' : fx(done, 0), done == null ? '' : '만 원', '목표 ' + fx(F.net, 0) + '만 (흑자 ' + fx(F.s, 0) + ' − 적금 − 이자)', done == null ? '' : done >= F.net ? 'ok' : 'bad');
+  } else kpi('마통 잔액', '—', '', S.ready ? '아직 잔액 기록이 없습니다' : '불러오는 중…');
+  renderChart(ser);
+  // 흑자별 0원 도달
+  const sel = $('surplusSel'); if (!sel.options.length) for (let v = 100; v <= 700; v += 50) sel.append(h('option', { value: v, text: '월 ' + v + '만 원' }));
+  sel.value = String(want);
+  const pt = $('payoff'); pt.replaceChildren();
+  if (cur) {
+    const debt = -cur.v / 1e4;
+    $('payoffNote').textContent = cur.date + ' 잔액 ' + man(cur.v) + '만 원 기준. 월급 ' + fx(c.salary_man) + '만 중 마통에 남기는 흑자에서 우리의 소원 적금(만기 전)을 빼고, 이자 연 ' + (c.rate * 100).toFixed(1) + '%를 붙여 계산합니다. 여행비·일회성 입금은 빼고 봅니다.';
+    pt.append(h('thead', {}, h('tr', {}, ['월 흑자', 'ISA·해외', '0원 도달', '이자 합계'].map((t, i) => h('th', { class: i !== 2 ? 'n' : '', text: t })))));
+    const tb = h('tbody');
+    [...new Set([200, 300, 400, 500, want])].sort((a, b) => a - b).forEach((s) => {
+      const sim = simulate(debt, s, c.rate, cur.date); const G = flowCtx(s);
+      tb.append(h('tr', { class: s === want ? 'hi' : '' }, h('td', { class: 'n' }, s + '만', s === +c.surplus_man ? h('small', { class: 'sub', text: '현재 계획' }) : null), h('td', { class: 'n', text: fx(G.residual, 0) + '만' }),
+        h('td', {}, sim.months >= 120 ? '10년 이상' : addMonths(cur.date, sim.months).slice(0, 7), sim.months >= 120 ? null : h('small', { class: 'sub', text: sim.months + '개월' })), h('td', { class: 'n', text: sim.months >= 120 ? '—' : '약 ' + fx(sim.interest, 0) + '만' })));
+    });
+    pt.append(tb);
+  } else $('payoffNote').textContent = '잔액 기록이 필요합니다.';
+  // 우리 마통 출금·이체
+  const ym = todayStr().slice(0, 7); const rows = [{ name: '월급 입금', day: '25일', man: +c.salary_man, note: '주말이면 직전 금요일' }];
+  F.items.filter((f) => f.acct === '우리').forEach((f) => rows.push({ name: f.name, day: f.day ? f.day + '일' : '', man: -F.val(f), note: (f.until && ym > f.until ? '만기 · ' : '') + (f.note || ''), off: f.until && ym > f.until }));
+  $('wTbl').replaceChildren(h('thead', {}, h('tr', {}, h('th', { text: '항목' }), h('th', { class: 'n', text: '날짜' }), h('th', { class: 'n', text: '월(만 원)' }))),
+    h('tbody', {}, rows.map((r) => h('tr', { class: r.off ? 'opt' : '' }, h('td', {}, r.name, r.note ? h('small', { class: 'sub', text: r.note }) : null), h('td', { class: 'n', text: r.day }), h('td', { class: 'n', text: (r.man > 0 ? '+' : '') + fx(r.man) })))),
+    h('tfoot', {}, h('tr', {}, h('td', {}, '남는 흑자 → 순상환', h('small', { class: 'sub', text: '흑자 ' + fx(F.s, 0) + ' − 적금 − 이자' })), h('td'), h('td', { class: 'n', text: '+' + fx(F.net) }))));
+  renderMonthly(ser);
+  renderFlow('우리', 'wFlow', 'wCats', 'wFlowTitle');
+}
+// 월말 점검 기록
+function renderMonthly(ser) {
+  if (!$('moYm').value) $('moYm').value = todayStr().slice(0, 7);
+  const list = refList('monthly').slice().sort((a, b) => (a.ym < b.ym ? 1 : -1));
+  const endOf = (ym) => { const p = [...ser].reverse().find((x) => ymOf(x.date) <= ym); return p ? p.v / 1e4 : null; };
+  const tb = h('tbody', {}, list.length ? list.map((r) => {
+    const w = endOf(r.ym); const pw = endOf(ymShift(r.ym, -1)); const net = w != null && pw != null ? w - pw : null;
+    return h('tr', {}, h('td', { text: r.ym }), h('td', { class: 'n', text: w == null ? '—' : fx(w, 0) }), h('td', { class: 'n', text: net == null ? '—' : (net > 0 ? '+' : '') + fx(net, 0) }),
+      h('td', { class: 'n', text: r.inv == null ? '' : fx(r.inv, 0) }), h('td', { class: 'n', text: r.cash == null ? '' : fx(r.cash, 0) }), h('td', { class: 'n', text: r.nh == null ? '' : fx(r.nh, 0) }), h('td', { text: r.memo || '' }),
+      h('td', { class: 'n' }, h('button', { class: 'btn small ghost danger', type: 'button', text: S.armed === 'mo' + r.ym ? '확인' : '삭제', onclick: async () => { if (S.armed !== 'mo' + r.ym) { S.armed = 'mo' + r.ym; render(); return; } S.armed = null; await store.setRef('monthly', refList('monthly').filter((x) => x.ym !== r.ym)); } })));
+  }) : [h('tr', {}, h('td', { colspan: 8, class: 'empty', text: '아직 기록이 없습니다. 월말에 한 줄씩 남겨 주세요.' }))]);
+  $('moTbl').replaceChildren(h('thead', {}, h('tr', {}, ['월', '마통 잔액', '순상환', '투자 이체', '대기 현금', '농협 잔액', '메모', ''].map((t, i) => h('th', { class: i && i < 6 ? 'n' : '', text: t })))), tb);
+}
+
+/* ================= 농협 탭 ================= */
+function renderNh() {
+  const F = flowCtx(); const c = F.c; const k = $('nKpis'); k.replaceChildren();
+  const kpi = (l, v, unit, s, cls) => k.append(h('div', { class: 'kpi' }, h('span', { class: 'l', text: l }), h('span', { class: 'v' }, v, unit ? h('small', { text: unit }) : null), h('span', { class: 's' + (cls ? ' ' + cls : ''), text: s })));
+  const nb = lastBal('농협'); const chk = d3.sum(F.bucket('d12'), F.val) + F.cards;
+  kpi('농협 잔액', nb ? man(nb.balance) : '—', nb ? '만 원' : '', nb ? nb.date + ' 기록' : '농협 통장 캡처가 아직 없습니다');
+  kpi('11일 점검선', fx(chk), '만 원', '12일 자동이체 + 14일 카드대금 · ' + fx(c.nh_check_man, 0) + '만 이상 권장', nb ? (nb.balance / 1e4 >= chk ? 'ok' : 'bad') : '');
+  const outs = ['invest', 'd28', 'd12', 'card'].reduce((a, b) => a + F.bsum(b), 0);
+  kpi('한 달 들어오고 나감', fx(F.transfer, 0) + ' / ' + fx(outs, 0), '만 원', '예비비 ' + fx(F.transfer - outs, 0) + '만이 매달 남음');
+  kpi('ISA·해외 이체 여력', fx(F.residual, 0), '만 원', '흑자 ' + fx(F.s, 0) + ' 기준 · 이체는 매수가 아님');
+  // 한 달 리듬 (계단 그래프)
+  const base = +c.nh_base_man || 0; const steps = [['24일', '월급 전 잔액', 0], ['25일', '월급 이체', F.transfer], ['25~26일', '투자·연금·적립', -F.bsum('invest')], ['28일', '저축·세금', -F.bsum('d28')], ['12일', '자동이체', -F.bsum('d12')], ['14일', '카드대금', -F.bsum('card')], ['다음 24일', '다음 월급 전', 0]];
+  let run = base; const pts = steps.map(([d, l, v]) => { run += v; return { d, l, v, b: run }; });
+  $('rhyNote').textContent = '월급 전 잔액 ' + fx(base, 0) + '만(예시)에서 시작합니다. 14일 카드대금 뒤가 최저점이고, 매달 예비비 ' + fx(F.transfer - outs, 0) + '만이 쌓입니다. 투자·연금·큰 지출 적립은 25~26일에 바로 내보내야 농협에 돈이 머물지 않습니다.';
+  drawRhythm(pts, chk);
+  // 출금 묶음
+  $('bkNote').textContent = '농협에서 나가는 돈을 날짜별로 묶었습니다. 카드는 전월 1일~말일 사용분을 12~14일에 결제합니다. 단위 만 원/월.';
+  const bk = $('nhBuckets'); bk.replaceChildren();
+  const box = (b, head, rows, foot) => bk.append(h('div', { class: 'bk b-' + b }, h('div', { class: 'bk-h' }, h('b', { text: BUCKETS[b] }), h('span', { text: fx(F.bsum(b)) + '만' })),
+    h('table', { class: 'tb' }, head ? h('thead', {}, h('tr', {}, head.map((t, i) => h('th', { class: i ? 'n' : '', text: t })))) : null, h('tbody', {}, rows)), foot ? h('p', { class: 'sub', text: foot }) : null));
+  ['d12', 'd28', 'invest', 'reserve'].forEach((b) => box(b, null, F.bucket(b).map((f) => h('tr', {}, h('td', {}, f.name, f.note ? h('small', { class: 'sub', text: ' ' + f.note }) : null), h('td', { class: 'n', text: f.day ? f.day + '일' : '' }), h('td', { class: 'n', text: fx(F.val(f)) })))));
+  box('card', ['카드', '고정', '변동', '한도'], refList('limits').map((l) => h('tr', { class: +l.cap_man ? '' : 'opt' }, h('td', {}, l.name, l.role ? h('small', { class: 'sub', text: ' ' + l.role }) : null), h('td', { class: 'n', text: fx(+l.fixed_man || 0) }), h('td', { class: 'n', text: fx(+l.var_man || 0) }), h('td', { class: 'n', text: fx(+l.cap_man || 0) }))),
+    '롯데 B(SKYPASS, 세금 전용)는 한도 밖이며 기업은행 세금대비 월 100으로 상환합니다.');
+  // 주담대
+  const mg = S.data.ref.mortgage; const mort = $('mort'); mort.replaceChildren();
+  if (mg && mg.balance) {
+    const pay = (+mg.autoPayment || 0) + (+mg.extraPayment || 0) + (+mg.wifePayment || 0); let b = +mg.balance, n = 0; const r = (+mg.rate || 0) / 1200;
+    while (b > 0 && n < 600) { b = b * (1 + r) - pay; n++; }
+    const done = addMonths(todayStr(), n).slice(0, 7);
+    [['잔액', won(mg.balance) + '원'], ['금리', (+mg.rate).toFixed(2) + '%'], ['월 원리금', won(mg.autoPayment) + '원'], ['추가 납입 (본인+배우자)', won((+mg.extraPayment || 0) + (+mg.wifePayment || 0)) + '원'], ['이대로 상환 시', n >= 600 ? '50년 이상' : done + ' (' + n + '개월)']]
+      .forEach(([kk, v]) => mort.append(h('div', {}, h('span', { class: 'sub', text: kk }), h('b', { text: v }))));
+    $('mortNote').textContent = (mg.source || '') + ' 기준이며 은행 잔액과 다를 수 있습니다. 농협 통장에서 12일에 자동이체됩니다.';
+  } else { mort.append(h('p', { class: 'empty', text: '주담대 기록이 없습니다.' })); $('mortNote').textContent = ''; }
+  // 규칙·확인 필요
+  $('rules').replaceChildren(...refList('rules').map((r) => { const i = r.indexOf(':'); return h('li', {}, i > 0 ? h('b', { text: r.slice(0, i) }) : null, i > 0 ? r.slice(i) : r); }));
+  const todo = refList('todo');
+  $('todo').replaceChildren(...todo.map((t) => h('label', { class: 'td' + (t.done ? ' done' : '') }, h('input', { type: 'checkbox', checked: !!t.done, onchange: async (e) => { await store.setRef('todo', refList('todo').map((x) => (x.id === t.id ? Object.assign({}, x, { done: e.target.checked }) : x))); } }), h('span', { text: t.text }))));
+  renderFlow('농협', 'nFlow', 'nCats', 'nFlowTitle');
+}
+function drawRhythm(pts, chk) {
+  const el = $('rhythm'); el.replaceChildren(); if (typeof d3 === 'undefined') return;
+  const W = Math.max(300, el.clientWidth || 600), H = W < 560 ? 230 : 270, m = { t: 22, r: 16, b: 44, l: 16 };
+  const x = d3.scalePoint().domain(pts.map((p, i) => i)).range([m.l + 18, W - m.r - 18]);
+  const y = d3.scaleLinear().domain([Math.min(0, d3.min(pts, (p) => p.b)), d3.max(pts, (p) => p.b) * 1.08]).range([H - m.b, m.t]);
+  const svg = d3.select(el).append('svg').attr('viewBox', [0, 0, W, H]).attr('role', 'img').attr('aria-label', '농협 통장 한 달 잔액 리듬 (만 원)');
+  svg.append('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', y(chk)).attr('y2', y(chk)).attr('stroke', 'var(--mute)').attr('stroke-dasharray', '3 4');
+  svg.append('text').attr('x', W - m.r).attr('y', y(chk) + 14).attr('text-anchor', 'end').text('11일 점검선 ' + fx(chk) + '만');
+  const line = d3.line().x((d, i) => x(i)).y((d) => y(d.b)).curve(d3.curveStepBefore);
+  svg.append('path').attr('d', line(pts)).attr('fill', 'none').attr('stroke', 'var(--accent)').attr('stroke-width', 2);
+  pts.forEach((p, i) => {
+    const low = i >= pts.length - 2; svg.append('circle').attr('cx', x(i)).attr('cy', y(p.b)).attr('r', 4).attr('fill', low ? 'var(--accent)' : 'var(--panel)').attr('stroke', 'var(--accent)').attr('stroke-width', 1.5);
+    svg.append('text').attr('x', x(i)).attr('y', y(p.b) - 8).attr('text-anchor', 'middle').style('font-weight', 600).style('fill', 'var(--ink)').text(fx(p.b, 0));
+    svg.append('text').attr('x', x(i)).attr('y', H - 24).attr('text-anchor', 'middle').style('fill', 'var(--ink)').text(W < 520 ? p.d.replace('다음 ', '').replace('25~26일', '26일') : p.d);
+    if (W >= 520 || i % 1 === 0) svg.append('text').attr('x', x(i)).attr('y', H - 9).attr('text-anchor', 'middle').text(p.v ? (p.v > 0 ? '+' : '') + fx(p.v, 0) : W >= 520 ? p.l : '');
+  });
 }
 
 /* ================= recognition ================= */
@@ -341,7 +512,7 @@ function fixDate(s, today) {
 }
 const fixTime = (t) => { const m = String(t || '').match(/(\d{1,2})\s*[:시]\s*(\d{2})/); return m ? pad(+m[1]) + ':' + m[2] : ''; };
 function normCard(c) { const s = String(c || ''); if (!s || s === 'null') return null; if (/농협|NH|올바른/i.test(s)) return '농협'; if (/롯데|KT|SKYPASS|LOCA/i.test(s)) return '롯데'; if (/신한/.test(s)) return '신한'; if (/삼성/.test(s)) return '삼성'; if (/현대|코스트코/.test(s)) return '현대'; if (/국민|KB/i.test(s)) return '국민'; return '기타'; }
-const normAcct = (a) => { const s = String(a || ''); if (/우리/.test(s)) return '우리'; if (/농협|NH/i.test(s)) return '농협'; if (/신한/.test(s)) return '신한'; return s ? '기타' : '우리'; };
+const normAcct = (a) => { const s = String(a || ''); if (!s || s === 'null') return ''; if (/우리|WON/i.test(s)) return '우리'; if (/농협|NH/i.test(s)) return '농협'; if (/신한|FNA/i.test(s)) return '신한'; return '기타'; };
 function chainCheck(rows) {
   const run = (dir) => { let ok = 0, bad = 0; const res = rows.map(() => null);
     for (let i = 0; i < rows.length - 1; i++) {
@@ -434,10 +605,18 @@ function cardAutoOK(res) {
 const TAX_RE = /국세|지방세|세금|ETAX|이택스|위택스|홈택스|국세청|종합소득세|부가가치세|부가세|재산세|자동차세|주민세|취득세|지방소득세|소득세|법인세|과태료/i;
 function normalize(out, today, hint) {
   const items = Array.isArray(out && out.items) ? out.items : [];
+  const hp = parseHint(hint);
+  if ((out && out.screen === 'tax') || (hp.kind === 'tax' && !['bank', 'card', 'mixed'].includes(out && out.screen))) return normalizeTax(out, today);
+  if (out && out.screen === 'other' && !items.length) return { screen: 'other', rows: [], notes: String(out.notes || '').slice(0, 300) };
   const screen = ['bank', 'card', 'mixed'].includes(out && out.screen) ? out.screen : (items.some((i) => i && i.balance != null) ? 'bank' : 'card');
   const bank = screen === 'bank';
-  const account = bank ? normAcct((out && (out.account || out.institution)) || '우리') : null;
-  const topCard = normCard(out && out.card); const rules = S.data.ref.catRules || {}; const hv = splitCardVal(hint); hint = hv.card;
+  // 통장 정하기: 사용자가 고른 통장 > 마이너스 잔액이면 우리 마통 > 화면의 은행 이름 > (모르면) 농협으로 추정하고 확인 요청
+  let account = null, acctGuess = false;
+  if (bank) {
+    const said = normAcct(out && (out.account || out.institution)); const neg = items.some((i) => i && toNum(i.balance) < 0) || toNum(out && out.screen_balance) < 0;
+    if (hp.kind === 'acct') account = hp.acct; else if (neg) account = '우리'; else if (said) account = said; else { account = '농협'; acctGuess = true; }
+  }
+  const topCard = normCard(out && out.card); const rules = S.data.ref.catRules || {}; const hv = hp.kind === 'card' ? { card: hp.card, id: hp.id } : { card: '', id: '' }; hint = hv.card;
   // 날짜를 먼저 읽습니다: 화면의 날짜 범위(period)를 정하고, 거래 날짜가 범위 밖이면 확인을 요구합니다.
   const pf = fixDate(out && out.period && out.period.from, today), pt = fixDate(out && out.period && out.period.to, today);
   const rows = []; const seen = new Set();
@@ -470,17 +649,18 @@ function normalize(out, today, hint) {
     const date = fixDate(d && d.date, today); const i = toNum(d && d.in), o = toNum(d && d.out);
     return date ? { date, in: Number.isFinite(i) ? Math.abs(Math.round(i)) : null, out: Number.isFinite(o) ? Math.abs(Math.round(o)) : null } : null;
   }).filter(Boolean).slice(0, 14);
-  const res = { screen, account, card: topCard || null, hint: hint || null, hintId: hv.id || null, rows, period: { from: pf || ds[0] || null, to: pt || ds[ds.length - 1] || null },
+  const res = { screen, account, acctGuess, card: topCard || null, hint: hint || null, hintId: hv.id || null, rows, period: { from: pf || ds[0] || null, to: pt || ds[ds.length - 1] || null },
     dayTotals, listTotal: Number.isFinite(lt) ? Math.round(lt) : null, screenBalance: Number.isFinite(sb) ? sb : null, notes: String((out && out.notes) || '').slice(0, 300) };
   res.check = bank ? chainCheck(rows) : cardCheck(rows, res);
   res.match = matchRows(rows, res); defaultInclude(rows);
   return res;
 }
 async function callApi(tiles, hint) {
+  const hp = parseHint(hint);
   const headers = { 'Content-Type': 'application/json' };
   const pass = lsGet(LS.pass, ''); if (pass) headers['x-app-passcode'] = pass;
   const key = lsGet(LS.key, ''); if (key) headers['x-user-api-key'] = key;
-  const r = await fetch('/api/recognize', { method: 'POST', headers, body: JSON.stringify({ images: tiles, today: todayStr(), cardHint: splitCardVal(hint).card, cardProduct: (() => { const c = cardsOf(splitCardVal(hint).card).find((x) => x.id === splitCardVal(hint).id); return c && cardsOf(c.card).length > 1 ? c.product || '' : ''; })() }) });
+  const r = await fetch('/api/recognize', { method: 'POST', headers, body: JSON.stringify({ images: tiles, today: todayStr(), docHint: hp.kind || '', acctHint: hp.acct || '', cardHint: hp.card || '', cardProduct: (() => { const c = cardsOf(hp.card).find((x) => x.id === hp.id); return c && cardsOf(c.card).length > 1 ? c.product || '' : ''; })() }) });
   let data = {}; try { data = await r.json(); } catch (e) { }
   if (!r.ok) throw new Error(data.error || ('서버 오류 (' + r.status + ')'));
   return data.result;
@@ -494,14 +674,16 @@ async function recognize(id) {
     const img = await loadImg(src); const tiles = await makeTiles(img); const today = todayStr();
     const result = normalize(await callApi(tiles, hint), today, hint);
     delete S.edits[id];
-    await store.setCap(id, { status: result.rows.length ? 'review' : 'failed', result, error: result.rows.length ? null : '거래를 찾지 못했습니다. 거래 목록이 보이게 캡처해 주세요.', recognizedAt: new Date().toISOString() });
+    const none = result.screen === 'other' ? '거래나 세금 자료를 찾지 못했습니다. 통장·카드 거래 목록이나 세금 고지서·납부 화면인지 확인해 주세요.' : '거래를 찾지 못했습니다. 거래 목록이 보이게 캡처해 주세요.';
+    await store.setCap(id, { status: result.rows.length ? 'review' : 'failed', result, error: result.rows.length ? null : none, recognizedAt: new Date().toISOString() });
+    if (result.screen === 'tax') { if (result.rows.length) toast('세금 자료로 읽었습니다. 납부/예정을 확인하고 반영하세요.'); return; }
     const auto = $('autoSave').checked; const m = result.match || {}; const bank = result.screen === 'bank';
-    const bankOK = bank && result.check.ok > 0 && result.check.bad === 0 && result.rows.every((r) => r.balance != null) && !m.maybe && !m.nodate;
+    const bankOK = bank && !result.acctGuess && result.check.ok > 0 && result.check.bad === 0 && result.rows.every((r) => r.balance != null) && !m.maybe && !m.nodate;
     if (result.rows.length && auto && (bankOK || (!bank && cardAutoOK(result)))) {
       const o = await saveRows(id, result, result.rows);
       const why = bank ? '잔액 검증 ' + result.check.ok + '곳 일치' : result.check.list === 'ok' ? '목록 합계 일치' : '날짜별 합계 일치';
       toast(o.added + o.upgraded === 0 ? '새 거래가 없습니다. ' + (m.same || 0) + '건 모두 이미 반영되어 있습니다.' : '신규 ' + o.added + '건' + (o.upgraded ? ' · 보완 ' + o.upgraded + '건' : '') + ' 반영, 이미 있는 ' + (m.same || 0) + '건은 건너뜀 (' + why + ')');
-    } else if (result.rows.length) toast(m.maybe || m.nodate ? '중복 의심 또는 날짜 확인이 필요한 행이 있습니다. 확인 후 저장하세요.' : '인식 완료. 확인 후 저장을 눌러주세요.');
+    } else if (result.rows.length) toast(result.acctGuess ? '화면에서 은행을 알 수 없어 농협으로 추정했습니다. 통장을 확인하고 저장하세요.' : m.maybe || m.nodate ? '중복 의심 또는 날짜 확인이 필요한 행이 있습니다. 확인 후 저장하세요.' : '인식 완료. 확인 후 저장을 눌러주세요.');
   } catch (e) {
     await store.setCap(id, { status: 'failed', error: (e && e.message) || '인식하지 못했습니다.' });
   } finally { S.running.delete(id); renderQueue(true); }
@@ -589,9 +771,9 @@ function renderQueue(force) {
   const el = $('queue'); el.replaceChildren();
   active.forEach((c) => {
     const res = c.result || {};
-    const kind = res.screen === 'bank' ? acctLabel(res.account || '') : res.screen === 'mixed' ? '결제·이체 혼합 내역' : res.screen === 'card' ? ((res.hint || res.card || '') ? (res.hint || res.card) + '카드 ' : '카드 ') + '이용내역' : '캡처';
+    const kind = res.screen === 'tax' ? '세금 자료' : res.screen === 'bank' ? acctLabel(res.account || '') + (res.acctGuess ? ' (추정)' : '') : res.screen === 'mixed' ? '결제·이체 혼합 내역' : res.screen === 'card' ? ((res.hint || res.card || '') ? (res.hint || res.card) + '카드 ' : '카드 ') + '이용내역' : '캡처';
     const info = h('div', { class: 'q-info' }, h('span', { class: 'q-title', text: kind + (res.rows ? ' · ' + res.rows.length + '건' : '') }), statusPill(c));
-    if (c.status === 'recognizing' && c.cardHint) { const hv = splitCardVal(c.cardHint); info.append(h('span', { class: 'sub', text: cardLabel(hv.card, hv.id) + '로 지정됨' })); }
+    if (c.status === 'recognizing' && c.cardHint) info.append(h('span', { class: 'sub', text: hintLabel(c.cardHint) + '로 지정됨' }));
     if (c.error) info.append(h('span', { class: 'sub', text: c.error }));
     if (res.notes) info.append(h('details', { class: 'memo' }, h('summary', { text: '인식 메모' }), h('span', { class: 'sub', text: res.notes })));
     const acts = h('div', { class: 'row' });
@@ -599,7 +781,7 @@ function renderQueue(force) {
     acts.append(h('button', { class: 'btn small ghost', type: 'button', text: '버리기', onclick: () => discard(c) }));
     const box = h('div', { class: 'q' }, h('div', { class: 'q-head' }, imgEl(c.id, 'q-thumb', '캡처', () => openViewer(c.id)), info), acts);
     if (c.status === 'review') {
-      box.append(reviewTable(c));
+      box.append(res.screen === 'tax' ? taxReviewTable(c) : reviewTable(c));
       // PC 넓은 화면: 원본 캡처를 표 옆에 크게 띄워 대조하며 검수 (좁은 화면에서는 CSS로 숨김)
       box.classList.add('has-rv'); box.append(h('div', { class: 'q-big' }, bigImg(c.id)));
     }
@@ -625,7 +807,8 @@ function reviewTable(c) {
     sumEl.replaceChildren();
     if (res.period && res.period.from) sumEl.append(h('div', { class: 'sub', text: '화면 날짜 ' + res.period.from + (res.period.to && res.period.to !== res.period.from ? ' ~ ' + res.period.to : '') }));
     sumEl.append(h('div', { class: 'mline', text: ['new', 'same', 'upgrade', 'maybe', 'nodate', 'skip'].filter((k) => m[k]).map((k) => ST_LABEL[k] + ' ' + m[k]).join(' · ') || '거래 없음' }));
-    if (bank) sumEl.append(h('div', { class: 'sub ' + (ck.bad ? 'warnt' : ck.ok ? 'okt' : ''), text: '잔액 검증: 일치 ' + ck.ok + '곳, 불일치 ' + ck.bad + '곳' }));
+    if (bank && res.acctGuess) sumEl.append(h('div', { class: 'sub warnt', text: '화면에서 은행 이름을 찾지 못해 농협으로 추정했습니다. 아래 통장을 확인하고 저장하세요.' }));
+    if (bank) sumEl.append(h('div', { class: 'sub ' + (ck.bad ? 'warnt' : ck.ok ? 'okt' : ''), text: acctLabel(res.account) + ' · 잔액 검증: 일치 ' + ck.ok + '곳, 불일치 ' + ck.bad + '곳' }));
     else {
       const by = (st) => Object.entries(ck.days || {}).filter(([, v]) => v === st).map(([d]) => md(d)).join(', ');
       if (by('ok')) sumEl.append(h('div', { class: 'sub okt', text: '날짜별 합계 일치: ' + by('ok') }));
@@ -664,7 +847,8 @@ function reviewTable(c) {
   });
   rematch();
   const head = ['', '상태', '날짜', '시각', '내용', bank ? '금액(입금+)' : '금액(결제+)'].concat(bank ? ['잔액', '검증'] : ['카드', '종류']).concat(['분류']);
-  const tools = bank ? null : h('div', { class: 'row rvtools' }, h('label', { class: 'fld inline' }, '카드 한꺼번에 바꾸기',
+  const tools = bank ? h('div', { class: 'row rvtools' }, h('label', { class: 'fld inline' + (res.acctGuess ? ' need' : '') }, '통장',
+    h('select', { 'aria-label': '통장', onchange: (e) => { res.account = e.target.value; res.acctGuess = false; e.target.parentNode.classList.remove('need'); rematch(); } }, ACCTS.map((a) => h('option', { value: a, text: acctLabel(a), selected: res.account === a }))))) : h('div', { class: 'row rvtools' }, h('label', { class: 'fld inline' }, '카드 한꺼번에 바꾸기',
     h('select', { onchange: (e) => { const v = e.target.value; if (!v) return; const sv = splitCardVal(v); rows.forEach((r) => { if (SPENDY(r.kind)) { r.card = sv.card; r.cardId = sv.id || defaultCardId(sv.card, r.category); } }); renderQueue(true); toast('결제 행의 카드를 ' + cardLabel(sv.card, sv.id) + '로 바꿨습니다.'); } }, [h('option', { value: '', text: '선택' })].concat(cardChoices().map((o) => h('option', { value: o.v, text: o.label }))))));
   saveBtn.addEventListener('click', async () => {
     saveBtn.disabled = true;
@@ -678,6 +862,9 @@ async function undoCap(c) {
   const key = 'u' + c.id;
   if (S.armed !== key) { S.armed = key; renderCapLog(); toast('한 번 더 누르면 이 캡처로 반영된 거래를 되돌립니다.'); setTimeout(() => { if (S.armed === key) { S.armed = null; renderCapLog(); } }, 4000); return; }
   S.armed = null; const list = txs().filter((t) => t.captureId === c.id); let n = 0, kept = 0;
+  const tax = S.data.ref.tax || {}; const tp = (tax.paid || []).filter((p) => p.captureId !== c.id); const tsc = (tax.schedule || []).filter((p) => p.captureId !== c.id || p.prev).map((p) => { if (p.captureId !== c.id) return p; const o = Object.assign({}, p, p.prev); delete o.prev; delete o.captureId; return o; });
+  const tch = (tax.schedule || []).filter((p) => p.captureId === c.id).length;
+  if (tp.length !== (tax.paid || []).length || tch) { n += (tax.paid || []).length - tp.length + tch; await store.setRef('tax', Object.assign({}, tax, { paid: tp, schedule: tsc })); }
   for (const t of list) {
     if (t.edited) { kept++; continue; }
     if (t.prev) {
@@ -752,7 +939,7 @@ function renderCapLog() {
   if (!list.length) { el.append(h('p', { class: 'empty', text: '올린 캡처가 없습니다.' })); return; }
   list.forEach((c) => {
     el.append(h('div', { class: 'li' }, h('span', { class: 'd' }, h('button', { class: 'btn small ghost', type: 'button', text: '보기', onclick: () => openViewer(c.id) }), ' ', String(c.createdAt || '').slice(0, 16).replace('T', ' ')),
-      statusPill(c), h('span', { class: 'm', text: c.result ? (c.result.screen === 'bank' ? (c.result.account || '') + ' 통장' : '카드') + ' · ' + (c.result.count != null ? c.result.count : (c.result.rows || []).length) + '건 인식' : (c.error || '') }),
+      statusPill(c), h('span', { class: 'm', text: c.result ? (c.result.screen === 'tax' ? '세금 자료' : c.result.screen === 'bank' ? (c.result.account || '') + ' 통장' : '카드') + ' · ' + (c.result.count != null ? c.result.count : (c.result.rows || []).length) + '건 인식' : (c.error || '') }),
       h('span', { class: 'x acts' }, c.status === 'saved' && c.savedCount ? h('button', { class: 'btn small ghost', type: 'button', text: S.armed === 'u' + c.id ? '되돌리기 확인' : '반영 취소', onclick: () => undoCap(c) }) : null,
         h('button', { class: 'btn small ghost danger', type: 'button', text: '기록 삭제', onclick: () => discard(c) }))));
   });
@@ -762,40 +949,6 @@ function openViewer(id) {
   if (S.tab !== 'tx') setTab('tx');
   v.append(h('button', { class: 'btn small', type: 'button', text: '닫기', onclick: () => openViewer(id) }), imgEl(id, '', '캡처 원본'));
   v.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-/* ================= render: plan ================= */
-function renderPlan(ser) {
-  const c = cfg(); const cur = ser[ser.length - 1]; const sel = $('surplusSel'); const want = S.surplus ?? c.surplus_man;
-  if (!sel.options.length) for (let v = 150; v <= 700; v += 50) sel.append(h('option', { value: v, text: '월 ' + v + '만 원' }));
-  sel.value = String(want);
-  const pt = $('payoff'); pt.replaceChildren();
-  if (cur) {
-    const debt = -cur.v / 1e4;
-    $('payoffNote').textContent = cur.date + ' 잔액 ' + man(cur.v) + '만 원 기준. 월급 ' + c.salary_man + '만 원 중 제2계좌로 보내고 남은 금액이 마통을 줄입니다. 이자 연 ' + (c.rate * 100).toFixed(1) + '% 반영, 주식 매도 같은 일회성 입금은 제외.';
-    pt.append(h('thead', {}, h('tr', {}, ['마통 잔류(월)', '제2계좌 이체', '완납까지', '완납 시기'].map((t, i) => h('th', { class: i < 3 ? 'n' : '', text: t })))));
-    const tb = h('tbody');
-    [...new Set([200, 300, 400, 500, want])].sort((a, b) => a - b).forEach((s) => { const sim = simulate(debt, s, c.rate); tb.append(h('tr', { class: s === want ? 'hi' : '' }, h('td', { class: 'n', text: s + '만' + (s === c.surplus_man ? ' (권고)' : '') }), h('td', { class: 'n', text: (c.salary_man - s) + '만' }), h('td', { class: 'n', text: sim.months >= 120 ? '10년 이상' : sim.months + '개월' }), h('td', { text: sim.months >= 120 ? '—' : addMonths(cur.date, sim.months).slice(0, 7) }))); });
-    pt.append(tb);
-  } else $('payoffNote').textContent = '잔액 기록이 필요합니다.';
-  const items = refList('plan'); const baseSum = d3.sum(items.filter((r) => !r.optional), (r) => +r.man); const optSum = d3.sum(items.filter((r) => r.optional), (r) => +r.man); const transfer = c.salary_man - want;
-  $('planNote').textContent = '필요액 ' + baseSum.toFixed(0) + '만 원 (선택 항목 포함 ' + (baseSum + optSum).toFixed(0) + '만). 월 ' + want + '만 원을 마통에 남기면 이체 ' + transfer + '만 원, 완충 ' + (transfer - baseSum - optSum).toFixed(0) + '만 원입니다.';
-  $('planTbl').replaceChildren(h('thead', {}, h('tr', {}, ['항목', '월(만 원)', '날짜', '메모'].map((t, i) => h('th', { class: i === 1 || i === 2 ? 'n' : '', text: t })))),
-    h('tbody', {}, items.map((r) => h('tr', { class: r.optional ? 'opt' : '' }, h('td', { text: r.item }), h('td', { class: 'n', text: (+r.man).toLocaleString('ko-KR') }), h('td', { class: 'n', text: r.day ? r.day + '일' : '' }), h('td', { text: r.note || '' })))),
-    h('tfoot', {}, h('tr', {}, h('td', { text: '합계 (선택 제외)' }), h('td', { class: 'n', text: baseSum.toLocaleString('ko-KR') }), h('td'), h('td'))));
-  const fixed = refList('fixed').filter((r) => r.group === '현금'); const fsum = d3.sum(fixed, (r) => +r.man);
-  $('fixCash').replaceChildren(h('thead', {}, h('tr', {}, h('th', { text: '항목' }), h('th', { text: '출금' }), h('th', { class: 'n', text: '월(만 원)' }))),
-    h('tbody', {}, fixed.map((r) => h('tr', {}, h('td', { text: r.name }), h('td', { text: r.via }), h('td', { class: 'n', text: (+r.man).toFixed(1) })))),
-    h('tfoot', {}, h('tr', {}, h('td', { text: '합계' }), h('td'), h('td', { class: 'n', text: fsum.toFixed(1) }))));
-  const mg = S.data.ref.mortgage; const mort = $('mort'); mort.replaceChildren();
-  if (mg && mg.balance) {
-    const pay = (+mg.autoPayment || 0) + (+mg.extraPayment || 0) + (+mg.wifePayment || 0); let b = +mg.balance, n = 0; const r = (+mg.rate || 0) / 1200;
-    while (b > 0 && n < 600) { b = b * (1 + r) - pay; n++; }
-    const done = addMonths(todayStr(), n).slice(0, 7);
-    [['잔액', won(mg.balance) + '원'], ['금리', (+mg.rate).toFixed(2) + '%'], ['월 원리금', won(mg.autoPayment) + '원'], ['추가 납입 (본인+배우자)', won((+mg.extraPayment || 0) + (+mg.wifePayment || 0)) + '원'], ['이대로 상환 시', n >= 600 ? '50년 이상' : done + ' (' + n + '개월)']]
-      .forEach(([k, v]) => mort.append(h('div', {}, h('span', { class: 'sub', text: k }), h('b', { text: v }))));
-    $('mortNote').textContent = (mg.source || '') + ' 기준이며 은행 잔액과 다를 수 있습니다. 잔액이 바뀌면 Claude에게 갱신을 요청하세요.';
-  } else { mort.append(h('p', { class: 'empty', text: '주담대 기록이 없습니다.' })); $('mortNote').textContent = ''; }
 }
 
 /* ================= reference defaults ================= */
@@ -818,6 +971,19 @@ function ensureRef() {
     lim.forEach((l) => { const s = sl.find((x) => x.id === l.id); if (s) l.name = s.name; if (l.id === 'lotte') l.ids = ['lotte']; });
     store.setRef('cards', cur); store.setRef('limits', lim); store.setRef('rev', 3);
   }
+  // rev 4: 2027 자금 흐름(우리 마통 → 농협) · 카드 결제계좌 농협 일원화 · 2026 세금 결산. 사용자가 입력한 세금대비 잔액은 유지합니다.
+  if ((+S.data.ref.rev || 0) < 4) {
+    const sd = window.GF_SEED.ref;
+    store.setRef('config', Object.assign({}, S.data.ref.config || {}, sd.config));
+    store.setRef('limits', JSON.parse(JSON.stringify(sd.limits)));
+    ['flow', 'rules', 'todo', 'schedule2027'].forEach((k) => store.setRef(k, JSON.parse(JSON.stringify(sd[k]))));
+    const cards = refList('cards').map((c) => { const w = (sd.cards || []).find((x) => x.id === c.id); if (!w) return Object.assign({}, c, { account: '농협 통장' });
+      const o = Object.assign({}, c, { account: w.account, memo: w.memo, perks: (w.perks || []).slice() }); if (c.id === 'lotte') o.benefit = w.benefit; if (c.id === 'shinhan' && +c.payDay === 25) o.payDay = w.payDay; return o; });
+    store.setRef('cards', cards);
+    const tax = S.data.ref.tax || {};
+    store.setRef('tax', Object.assign(JSON.parse(JSON.stringify(sd.tax)), { reserve_man: tax.reserve_man == null ? null : tax.reserve_man, reserveAt: tax.reserveAt || null }));
+    store.setRef('rev', 4);
+  }
 }
 
 /* ================= shared helpers ================= */
@@ -835,8 +1001,11 @@ const apCardId = (a) => (a.cardId && cardsOf(a.card).some((c) => c.id === a.card
 function calEvents(ym) {
   const [y, m] = ym.split('-').map(Number); const c = cfg(); const ev = []; const dim = new Date(y, m, 0).getDate();
   const add = (date, o) => ev.push(Object.assign({ date }, o));
-  add(ym + '-' + pad(salaryDay(y, m)), { kind: 'in', label: '급여 입금', sub: '우리 통장 · 주말이면 직전 금요일', amount: c.salary_man * 1e4 });
-  refList('plan').forEach((p) => { if (!p.day || p.optional || /카드대금/.test(p.item)) return; add(ds(bizDay(y, m, p.day)), { kind: 'plan', label: p.item, sub: '제2계좌 이체 계획', amount: -p.man * 1e4 }); });
+  add(ym + '-' + pad(salaryDay(y, m)), { kind: 'in', label: '급여 입금', sub: '우리 마통 · 주말이면 직전 금요일', amount: c.salary_man * 1e4 });
+  const F = flowCtx();
+  F.items.forEach((f) => { if (!f.day || (f.until && ym > f.until)) return; const v = F.val(f); if (!v) return;
+    add(ds(bizDay(y, m, f.day)), { kind: 'plan', label: f.name, sub: (f.acct === '우리' ? '우리 마통' : '농협 통장') + ' · ' + (BUCKETS[f.bucket] || ''), amount: -v * 1e4 }); });
+  refList('schedule2027').forEach((s) => { if (ymOf(s.date) === ym) add(s.date, { kind: 'plan', label: s.name, sub: '2027 주요 일정', amount: null }); });
   const prev = ymShift(ym, -1);
   refList('cards').forEach((cd) => {
     if (!cd.payDay) return; const used = cardUse(cd, prev);
@@ -844,8 +1013,8 @@ function calEvents(ym) {
   });
   refList('autopays').forEach((a) => { if (!a.day) return; add(ym + '-' + pad(Math.min(a.day, dim)), { kind: 'auto', label: a.name, sub: cardLabel(a.card, apCardId(a)) + ' 자동결제', amount: -(+a.amount || 0) }); });
   const tax = S.data.ref.tax || {};
-  (tax.schedule || []).forEach((t) => { if (ymOf(t.date) === ym) add(t.date, { kind: 'tax', label: t.name, sub: '세금 (예정)', amount: -t.man * 1e4 }); });
-  (tax.paid || []).forEach((t) => { if (ymOf(t.date) === ym) add(t.date, { kind: 'tax', label: t.name, sub: '세금 (납부)', amount: -t.man * 1e4 }); });
+  (tax.schedule || []).forEach((t) => { if (ymOf(t.date) === ym) add(t.date, { kind: 'tax', label: t.name, sub: '세금 (예정' + (t.month ? ', 날짜는 대략' : '') + ')', amount: +t.man ? -t.man * 1e4 : null }); });
+  (tax.paid || []).forEach((t) => { if (ymOf(t.date) === ym) add(t.date, { kind: 'tax', label: t.name, sub: '세금 (납부' + (t.status === '추정' ? ', 금액 추정' : '') + ')', amount: t.man == null ? null : -t.man * 1e4 }); });
   return ev;
 }
 const KIND_CLASS = { in: 'ev-in', card: 'ev-card', auto: 'ev-auto', plan: 'ev-plan', tax: 'ev-tax', tx: 'ev-tx' };
@@ -942,45 +1111,93 @@ $('apForm').addEventListener('submit', async (e) => {
 });
 
 /* ================= tax ================= */
-function depositsBetween(from, to) {
-  // 매달 10일 적립 기준: from(제외)~to(포함) 사이 10일의 개수
-  const a = new Date(from + 'T00:00:00'), b = new Date(to + 'T00:00:00'); let n = 0;
-  const d = new Date(a.getFullYear(), a.getMonth(), 10); if (d <= a) d.setMonth(d.getMonth() + 1);
+const TAX_GROUPS = ['소득세', '재산세', '종부세', '자동차세', '양도세', '기타'];
+const TAX_GROUP_LABEL = { 소득세: '소득세류 (종소세·지방소득세)', 재산세: '재산세', 종부세: '종합부동산세', 자동차세: '자동차세', 양도세: '양도소득세', 기타: '기타' };
+function taxGroupOf(name) { const s = String(name || ''); if (/종합부동산|종부/.test(s)) return '종부세'; if (/재산/.test(s)) return '재산세'; if (/자동차/.test(s)) return '자동차세'; if (/양도/.test(s)) return '양도세'; if (/소득|주민/.test(s)) return '소득세'; return '기타'; }
+const taxKindOf = (name, kind) => (kind === '국세' || kind === '지방세' ? kind : /재산|자동차|지방|주민|취득|ETAX|위택스/i.test(String(name || '')) ? '지방세' : '국세');
+const taxDateLabel = (p) => (p.month ? Number(p.date.slice(5, 7)) + '월' : md(p.date));
+function depositsBetween(from, to, day) {
+  // 매달 day일 적립 기준: from(제외)~to(포함) 사이 적립 횟수
+  const dd = day || 28; const a = new Date(from + 'T00:00:00'), b = new Date(to + 'T00:00:00'); let n = 0;
+  const d = new Date(a.getFullYear(), a.getMonth(), dd); if (d <= a) d.setMonth(d.getMonth() + 1);
   while (d <= b && n < 240) { n++; d.setMonth(d.getMonth() + 1); }
   return n;
 }
-function renderTax() {
-  const tax = S.data.ref.tax || {}; const today = todayStr(); const year = today.slice(0, 4);
-  const paid = (tax.paid || []).map((p) => Object.assign({}, p));
-  const lastPaid = paid.reduce((a, p) => (p.date > a ? p.date : a), '0000');
-  txs().filter((t) => t.category === '세금' && t.date > lastPaid).forEach((t) => paid.push({ date: t.date, name: (t.desc || '세금') + ' (기록)', man: Math.abs(+t.amount) / 1e4 }));
-  paid.sort((a, b) => (a.date < b.date ? 1 : -1));
-  const sched = (tax.schedule || []).map((s, i) => Object.assign({ i }, s)).sort((a, b) => (a.date < b.date ? -1 : 1));
-  const future = sched.filter((s) => s.date >= today);
-  const yearEnd = ds(new Date(+today.slice(0, 4) + 1, +today.slice(5, 7) - 1, +today.slice(8)));
-  const next12 = future.filter((s) => s.date <= yearEnd); const monthly = +tax.monthly_man || 0;
-  const reserve = tax.reserve_man == null || tax.reserve_man === '' ? null : +tax.reserve_man; const base = tax.reserveAt || today;
-  let cum = 0; let shortAt = null;
-  const proj = sched.map((s) => {
-    if (s.date < today || reserve == null) return Object.assign({ left: null }, s);
-    cum += +s.man; const left = reserve + monthly * depositsBetween(base, s.date) - cum; if (left < 0 && !shortAt) shortAt = s.date; return Object.assign({ left }, s);
+// 납부 기록: 결산 목록 + 거래로 기록된 세금(결산 목록과 겹치지 않는 것만)
+function taxPaidAll() {
+  const tax = S.data.ref.tax || {}; const paid = (tax.paid || []).map((p) => Object.assign({ src: 'list' }, p));
+  const near = (a, b, days) => Math.abs((new Date(a) - new Date(b)) / 864e5) <= days;
+  txs().filter((t) => t.category === '세금' && !(t.type === 'card' && isSummary(t))).forEach((t) => {
+    const m = Math.abs(+t.amount) / 1e4; if (!m) return;
+    if (paid.some((p) => p.man != null && near(p.date, t.date, 10) && Math.abs(p.man - m) <= Math.max(0.05, m * 0.01))) return;
+    paid.push({ date: t.date, name: (t.desc || '세금') + ' (거래 기록)', kind: taxKindOf(t.desc), group: taxGroupOf(t.desc), man: m, status: '기록', note: t.type === 'card' ? cardLabel(t.card, cardIdOf(t)) : acctLabel(t.account), src: 'tx' });
   });
+  return paid.sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+// 예정 세금이 실제로 납부됐는지: 납부 기록 중 날짜 −40~+20일, 금액 ±15% 안
+function schedDone(s, paid) {
+  if (!(+s.man > 0)) return null;
+  return paid.find((p) => p.man != null && p.man > 0 && (new Date(p.date) - new Date(s.date)) / 864e5 >= -40 && (new Date(p.date) - new Date(s.date)) / 864e5 <= 20 && Math.abs(p.man - s.man) <= s.man * 0.15) || null;
+}
+function renderTax() {
+  const tax = S.data.ref.tax || {}; const today = todayStr(); const paid = taxPaidAll(); const monthly = +tax.monthly_man || 0; const dDay = +tax.depositDay || 28;
+  const years = d3.rollups(paid, (v) => v.length, (p) => p.date.slice(0, 4)).filter(([, n]) => n >= 3).map(([y]) => y).sort();
+  const Y = years.length ? years[years.length - 1] : today.slice(0, 4); const NY = String(+Y + 1);
+  const yp = paid.filter((p) => p.date.startsWith(Y));
+  const conf = yp.filter((p) => p.status !== '추정' && p.status !== '미확인'); const confSum = d3.sum(conf, (p) => +p.man || 0); const allSum = d3.sum(yp, (p) => +p.man || 0);
+  const sched = (tax.schedule || []).map((s, i) => Object.assign({ i }, s)).sort((a, b) => (a.date < b.date ? -1 : 1));
+  sched.forEach((s) => { s.done = schedDone(s, paid); });
+  const future = sched.filter((s) => !s.done && s.date >= today);
+  const nyItems = sched.filter((s) => s.date.startsWith(NY)); const nySum = d3.sum(nyItems, (s) => +s.man || 0);
+  const reserve = tax.reserve_man == null || tax.reserve_man === '' ? null : +tax.reserve_man; const base = tax.reserveAt || today;
+  // 적립 잔액 흐름: 입력한 잔액(없으면 0)에서 매달 적립을 더하고 예정 세금을 뺍니다.
+  let cum = 0; let shortAt = null; let minLeft = Infinity; const start = reserve == null ? 0 : reserve;
+  const proj = sched.map((s) => {
+    if (s.done || s.date < base) return Object.assign({ left: null }, s);
+    cum += +s.man || 0; const left = start + monthly * depositsBetween(base, s.date, dDay) - cum; if (left < 0 && !shortAt) shortAt = s.date; minLeft = Math.min(minLeft, left); return Object.assign({ left }, s);
+  });
+  // KPI
   const k = $('taxKpis'); k.replaceChildren();
   const kpi = (l, v, unit, s, cls) => k.append(h('div', { class: 'kpi' }, h('span', { class: 'l', text: l }), h('span', { class: 'v' }, v, unit ? h('small', { text: unit }) : null), h('span', { class: 's' + (cls ? ' ' + cls : ''), text: s })));
-  kpi(year + '년 납부', d3.sum(paid.filter((p) => p.date.startsWith(year)), (p) => +p.man).toFixed(1), '만 원', paid.filter((p) => p.date.startsWith(year)).length + '건');
-  const nx = future[0]; kpi('다음 납부', nx ? (+nx.man).toFixed(1) : '—', nx ? '만 원' : '', nx ? nx.date + ' · ' + nx.name : '예정 없음');
-  kpi('12개월 예정', d3.sum(next12, (s) => +s.man).toFixed(1), '만 원', '적립 ' + (monthly * 12) + '만 원 대비 ' + (monthly * 12 - d3.sum(next12, (s) => +s.man) >= 0 ? '여유 ' : '부족 ') + Math.abs(monthly * 12 - d3.sum(next12, (s) => +s.man)).toFixed(1) + '만', monthly * 12 >= d3.sum(next12, (s) => +s.man) ? 'ok' : 'bad');
-  kpi('세금적립 잔액', reserve == null ? '—' : reserve.toFixed(0), reserve == null ? '' : '만 원', reserve == null ? '잔액을 입력하세요' : shortAt ? shortAt + ' 납부 때 부족' : '예정 세금 모두 충당 가능', reserve == null ? '' : shortAt ? 'bad' : 'ok');
+  kpi(Y + '년 납부 (확인)', fx(confSum), '만 원', '추정 포함 ' + fx(allSum) + '만 · ' + yp.length + '건');
+  const room = monthly * 12 - nySum;
+  kpi(NY + '년 예상 세금', fx(nySum), '만 원', '적립 ' + fx(monthly * 12, 0) + '만 대비 ' + (room >= 0 ? '여유 ' : '부족 ') + fx(Math.abs(room)) + '만', room >= 0 ? 'ok' : 'bad');
+  const nx = future[0]; kpi('다음 납부', nx ? fx(+nx.man || 0) : '—', nx ? '만 원' : '', nx ? taxDateLabel(nx) + (nx.month ? '' : '') + ' · ' + nx.name : '예정 없음');
+  kpi((tax.reserveName || '세금대비') + ' 잔액', reserve == null ? '—' : fx(reserve, 0), reserve == null ? '' : '만 원', reserve == null ? '잔액을 입력하면 정확해집니다' : shortAt ? taxDateLabel({ date: shortAt }) + ' 납부 때 부족' : '예정 세금 모두 충당 가능', reserve == null ? '' : shortAt ? 'bad' : 'ok');
+  // 판정
+  const v = tax.verdict || {};
+  $('taxVerdict').replaceChildren(h('div', { class: 'verdict' }, h('span', { class: 'pill ' + (room >= 0 ? 'ok' : 'bad'), text: v.label || (room >= 0 ? '적합' : '부족') }),
+    h('span', { class: 'sub', text: '보고서: 기본 ' + (v.base_man >= 0 ? '+' : '') + fx(v.base_man || 0, 0) + '만 여유 · 보수 ' + (v.cons_man >= 0 ? '+' : '') + fx(v.cons_man || 0, 0) + '만 · 지금 예정 기준 ' + (room >= 0 ? '+' : '') + fx(room) + '만' })),
+    v.why ? h('p', { class: 'sub', text: v.why }) : null);
   if (document.activeElement !== $('taxRes')) $('taxRes').value = reserve == null ? '' : reserve;
   if (document.activeElement !== $('taxMon')) $('taxMon').value = monthly || '';
-  $('taxResNote').textContent = reserve == null ? '기업·하나 세금적립 통장의 현재 잔액을 넣으면 앞으로 세금을 낼 수 있는지 계산합니다.' : (tax.reserveAt || '') + ' 입력 기준 잔액 ' + reserve + '만 원, 매달 10일 ' + monthly + '만 원 적립으로 계산합니다.';
-  $('taxSched').replaceChildren(h('thead', {}, h('tr', {}, h('th', { text: '납부일' }), h('th', { text: '항목' }), h('th', { class: 'n', text: '금액(만 원)' }), h('th', { class: 'n', text: '납부 후 적립 잔액' }), h('th'))),
-    h('tbody', {}, proj.map((s) => h('tr', { class: s.left != null && s.left < 0 ? 'short' : s.date < today ? 'opt' : '' }, h('td', { text: s.date }), h('td', { text: s.name }),
-      h('td', { class: 'n' }, h('input', { class: 'inl', value: s.man, inputMode: 'decimal', 'aria-label': s.name + ' 금액', onchange: async (e) => { const v = toNum(e.target.value); if (!Number.isFinite(v)) return; const list = (tax.schedule || []).slice(); list[s.i] = Object.assign({}, list[s.i], { man: v }); await store.setRef('tax', Object.assign({}, tax, { schedule: list })); toast('저장했습니다.'); } })),
-      h('td', { class: 'n', text: s.left == null ? '—' : s.left.toFixed(1) + '만' }),
-      h('td', { class: 'n' }, h('button', { class: 'btn small ghost danger', type: 'button', text: S.armed === 'tx' + s.i ? '확인' : '삭제', onclick: async () => { if (S.armed !== 'tx' + s.i) { S.armed = 'tx' + s.i; renderTax(); return; } S.armed = null; await store.setRef('tax', Object.assign({}, tax, { schedule: (tax.schedule || []).filter((_, j) => j !== s.i) })); } }))))));
-  $('taxPaid').replaceChildren(h('thead', {}, h('tr', {}, h('th', { text: '납부일' }), h('th', { text: '항목' }), h('th', { class: 'n', text: '금액(만 원)' }))),
-    h('tbody', {}, paid.map((p) => h('tr', {}, h('td', { text: p.date }), h('td', { text: p.name }), h('td', { class: 'n', text: (+p.man).toFixed(1) })))));
+  $('taxResNote').textContent = (reserve == null ? '잔액을 0으로 보고 ' : (tax.reserveAt || '') + ' 입력 잔액 ' + fx(reserve, 0) + '만에서 ') + '매달 ' + dDay + '일 ' + fx(monthly, 0) + '만씩 쌓고 예정 세금을 빼면, 가장 낮을 때 ' + (Number.isFinite(minLeft) ? fx(minLeft, 0) + '만' : '—') + (shortAt ? ' (' + taxDateLabel({ date: shortAt }) + ' 부족)' : '') + '입니다. 농협 28일 이체 → ' + (tax.reserveName || '기업은행 세금대비') + '.';
+  // 예정 표
+  $('taxSched').replaceChildren(h('thead', {}, h('tr', {}, ['납부일', '항목', '금액(만 원)', '적립 잔액', ''].map((t, i) => h('th', { class: i >= 2 ? 'n' : '', text: t })))),
+    h('tbody', {}, proj.map((s) => h('tr', { class: s.done ? 'opt done' : s.date < today ? 'opt' : '' }, h('td', { text: (s.date.slice(0, 4) !== NY ? s.date.slice(2, 4) + '.' : '') + taxDateLabel(s) }), h('td', {}, s.name, h('small', { class: 'sub', text: [s.kind || taxKindOf(s.name), s.note].filter(Boolean).join(' · ') })),
+      h('td', { class: 'n' }, s.done ? h('span', { text: fx(+s.man || 0) }) : h('input', { class: 'inl', value: s.man, inputMode: 'decimal', 'aria-label': s.name + ' 금액', onchange: async (e) => { const vv = toNum(e.target.value); if (!Number.isFinite(vv)) return; const list = (tax.schedule || []).slice(); list[s.i] = Object.assign({}, list[s.i], { man: vv }); await store.setRef('tax', Object.assign({}, tax, { schedule: list })); } })),
+      h('td', { class: 'n' + (s.left != null && s.left < 0 ? ' neg' : ''), text: s.done ? '납부됨 ' + md(s.done.date) : s.left == null ? '' : fx(s.left, 0) }),
+      h('td', { class: 'n' }, h('button', { class: 'btn small ghost danger xbtn', type: 'button', 'aria-label': s.name + ' 삭제', text: S.armed === 'tx' + s.i ? '확인' : '×', onclick: async () => { if (S.armed !== 'tx' + s.i) { S.armed = 'tx' + s.i; renderTax(); return; } S.armed = null; await store.setRef('tax', Object.assign({}, tax, { schedule: (tax.schedule || []).filter((_, j) => j !== s.i) })); } }))))),
+    h('tfoot', {}, h('tr', {}, h('td', { text: NY + '년 합계' }), h('td'), h('td', { class: 'n', text: fx(nySum) }), h('td'), h('td'))));
+  // 결산: 구성·월별
+  $('taxYearTitle').textContent = Y + '년 세금 결산';
+  const kinds = d3.rollups(yp, (vv) => d3.sum(vv, (p) => +p.man || 0), (p) => p.kind || taxKindOf(p.name));
+  const unknown = yp.filter((p) => p.man == null).map((p) => p.name);
+  $('taxYearNote').textContent = '금액이 확인된 납부 ' + fx(confSum) + '만, 추정 포함 ' + fx(allSum) + '만입니다. ' + kinds.map(([kk, vv]) => kk + ' ' + fx(vv) + '만 (' + Math.round(vv / (allSum || 1) * 100) + '%)').join(' · ') + '.' + (unknown.length ? ' 금액을 모르는 ' + unknown.join(', ') + '은 합계에서 빠졌습니다.' : '');
+  const mix = d3.rollups(yp.filter((p) => +p.man > 0), (vv) => d3.sum(vv, (p) => +p.man), (p) => p.group || taxGroupOf(p.name)).sort((a, b) => b[1] - a[1]); const mx = mix.length ? mix[0][1] : 1;
+  $('taxMix').replaceChildren(...mix.map(([g, vv]) => { const i = h('i'); i.style.width = (vv / mx * 100) + '%'; return h('div', { class: 'cat' }, h('span', { text: TAX_GROUP_LABEL[g] || g }), h('div', { class: 't' }, i), h('span', { class: 'n', text: fx(vv, 0) + '만 · ' + Math.round(vv / (allSum || 1) * 100) + '%' })); }));
+  const byM = Array.from({ length: 12 }, (_, i) => { const ps = yp.filter((p) => +p.date.slice(5, 7) === i + 1); return { m: i + 1, v: d3.sum(ps, (p) => +p.man || 0), est: ps.some((p) => p.status === '추정') }; });
+  const top = Math.max(monthly, d3.max(byM, (x) => x.v) || 1);
+  const mb = $('taxMonths'); mb.replaceChildren();
+  const line = h('div', { class: 'mline-100' }, h('span', { text: '월 적립 ' + fx(monthly, 0) + '만' })); line.style.bottom = 'calc(22px + ' + (monthly / top) + ' * (100% - 40px))';
+  byM.forEach((x) => { const bar = h('i', { class: x.est ? 'est' : '' }); bar.style.height = (x.v / top * 100) + '%'; mb.append(h('div', { class: 'mb' }, h('small', { text: x.v ? fx(x.v, 0) : '' }), h('div', { class: 'mbt' }, bar), h('span', { text: x.m + '' }))); });
+  mb.append(line);
+  // 납부 기록
+  $('taxPaid').replaceChildren(h('thead', {}, h('tr', {}, ['납부일', '세목', '금액(만 원)'].map((t, i) => h('th', { class: i === 2 ? 'n' : '', text: t })))),
+    h('tbody', {}, paid.map((p) => h('tr', { class: p.status === '추정' || p.status === '미확인' ? 'opt' : '' }, h('td', { text: p.month ? p.date.slice(2, 4) + '.' + Number(p.date.slice(5, 7)) + '월' : p.date.slice(2).replace(/-/g, '.') }),
+      h('td', {}, p.name, h('small', { class: 'sub', text: [p.kind || taxKindOf(p.name), p.status, p.note].filter(Boolean).join(' · ') })),
+      h('td', { class: 'n', text: p.man == null ? '미확인' : (p.status === '추정' ? '약 ' : '') + fx(+p.man, 1) })))));
+  $('taxNotes').replaceChildren(...(tax.notes || []).map((n) => h('li', { text: n })));
 }
 $('taxResForm').addEventListener('submit', async (e) => {
   e.preventDefault(); const r = toNum($('taxRes').value); const mo = toNum($('taxMon').value); const tax = S.data.ref.tax || {};
@@ -989,15 +1206,100 @@ $('taxResForm').addEventListener('submit', async (e) => {
 });
 $('taxAddForm').addEventListener('submit', async (e) => {
   e.preventDefault(); const v = toNum($('taxAmt').value); if (!Number.isFinite(v) || !$('taxDate').value || !$('taxName').value.trim()) { toast('납부일, 항목, 금액을 확인하세요.'); return; }
-  const tax = S.data.ref.tax || {}; await store.setRef('tax', Object.assign({}, tax, { schedule: (tax.schedule || []).concat([{ date: $('taxDate').value, name: $('taxName').value.trim(), man: v }]) }));
+  const name = $('taxName').value.trim(); const tax = S.data.ref.tax || {};
+  await store.setRef('tax', Object.assign({}, tax, { schedule: (tax.schedule || []).concat([{ date: $('taxDate').value, name, kind: $('taxKind').value, group: taxGroupOf(name), man: v, note: '직접 추가' }]) }));
   $('taxName').value = ''; $('taxAmt').value = ''; toast('추가했습니다.');
 });
+$('moForm').addEventListener('submit', async (e) => {
+  e.preventDefault(); const ym = $('moYm').value; if (!/^\d{4}-\d{2}$/.test(ym)) { toast('월을 고르세요.'); return; }
+  const num = (id) => { const v = toNum($(id).value); return Number.isFinite(v) ? v : null; };
+  const nhAuto = lastBal('농협', ym); const nh = num('moNh') != null ? num('moNh') : nhAuto && ymOf(nhAuto.date) === ym ? Math.round(nhAuto.balance / 1e3) / 10 : null;
+  const row = { ym, inv: num('moInv'), cash: num('moCash'), nh, memo: $('moMemo').value.trim(), at: new Date().toISOString() };
+  await store.setRef('monthly', refList('monthly').filter((x) => x.ym !== ym).concat([row]));
+  ['moInv', 'moCash', 'moNh', 'moMemo'].forEach((id) => { $(id).value = ''; }); toast(ym + ' 점검을 기록했습니다.');
+});
+
+/* ================= 세금 자료 인식 (고지서·납부 확인 화면) ================= */
+// 연도가 있으면 그대로, 없으면 올해로 (고지서의 납부기한은 미래일 수 있어 전년으로 돌리지 않습니다)
+function fixTaxDate(s, today) {
+  const str = String(s || '').trim(); let m = str.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/); let y, mo, d;
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; } else { m = str.match(/(\d{1,2})\D+(\d{1,2})/); if (!m) return null; y = +today.slice(0, 4); mo = +m[1]; d = +m[2]; }
+  if (!(mo >= 1 && mo <= 12 && d >= 1 && d <= 31)) return null;
+  return y + '-' + pad(mo) + '-' + pad(d);
+}
+function normalizeTax(out, today) {
+  const items = Array.isArray(out && out.items) ? out.items : []; const rows = [];
+  items.forEach((it) => {
+    if (!it) return; const amt = Math.abs(toNum(it.amount)); if (!Number.isFinite(amt) || !amt) return;
+    const name = String(it.name || it.desc || '세금').slice(0, 40); const date = fixTaxDate(it.date, today) || '';
+    const st = it.status === 'due' ? 'due' : it.status === 'paid' ? 'paid' : (date && date > today ? 'due' : 'paid');
+    rows.push({ include: !!date, date, name, kind: taxKindOf(name, it.kind), group: taxGroupOf(name), amount: Math.round(amt), status: st });
+  });
+  const res = { screen: 'tax', rows, notes: String((out && out.notes) || '').slice(0, 300) };
+  taxMatch(rows); rows.forEach((r) => { if (r.tm.st === 'same') r.include = false; });
+  return res;
+}
+// 기존 세금 탭 기록과 대조: 납부는 납부 기록(±10일·금액 ±1%), 예정은 같은 달·같은 세목의 예정 항목
+function taxMatch(rows) {
+  const tax = S.data.ref.tax || {}; const paid = taxPaidAll(); const sched = tax.schedule || [];
+  rows.forEach((r) => {
+    const man = r.amount / 1e4; r.tm = { st: r.date ? 'new' : 'nodate' }; if (!r.date) return;
+    if (r.status === 'paid') {
+      const p = paid.find((x) => x.man != null && Math.abs((new Date(x.date) - new Date(r.date)) / 864e5) <= 10 && Math.abs(x.man - man) <= Math.max(0.05, man * 0.01));
+      if (p) r.tm = { st: 'same', text: '이미 있음 (' + (p.src === 'tx' ? '거래 기록' : '납부 기록') + ')' };
+    } else {
+      // 같은 세목 묶음 · 날짜 ±45일 안에서 이름이 가장 비슷하고 금액이 가까운 예정 항목
+      const cands = sched.map((x, i) => ({ x, i })).filter(({ x }) => (x.group || taxGroupOf(x.name)) === r.group && Math.abs((new Date(x.date) - new Date(r.date)) / 864e5) <= 45);
+      cands.sort((a, b) => descSim(b.x.name, r.name) - descSim(a.x.name, r.name) || Math.abs((+a.x.man || 0) - man) - Math.abs((+b.x.man || 0) - man));
+      const i = cands.length ? cands[0].i : -1;
+      if (i >= 0) r.tm = Math.abs((+sched[i].man || 0) - man) < 0.05 ? { st: 'same', text: '예정에 이미 있음' } : { st: 'upd', i, text: '예정 ' + fx(+sched[i].man || 0) + '만 → ' + fx(man) + '만' };
+    }
+  });
+}
+async function saveTaxRows(capId, rows) {
+  const tax = S.data.ref.tax || {}; const paid = (tax.paid || []).slice(); const sched = (tax.schedule || []).slice(); let n = 0;
+  rows.filter((r) => r.include !== false && r.date && r.amount).forEach((r) => {
+    const man = Math.round(r.amount) / 1e4; const base = { date: r.date, name: r.name, kind: r.kind, group: r.group || taxGroupOf(r.name), man, captureId: capId };
+    if (r.status === 'paid') { paid.push(Object.assign(base, { status: '확인', note: '캡처로 기록' })); n++; }
+    else if (r.tm && r.tm.st === 'upd') { const o = sched[r.tm.i]; sched[r.tm.i] = Object.assign({}, o, { man, date: r.date, month: false, note: '고지서 반영', captureId: capId, prev: { man: o.man == null ? null : o.man, date: o.date, month: !!o.month, note: o.note || '' } }); n++; }
+    else { sched.push(Object.assign(base, { note: '고지서 반영' })); n++; }
+  });
+  await store.setRef('tax', Object.assign({}, tax, { paid, schedule: sched }));
+  const prev = S.data.captures[capId] || {}; const now = new Date().toISOString();
+  await store.replaceCap(capId, { status: 'saved', savedCount: n, savedAt: now, createdAt: prev.createdAt || now, name: prev.name || '', imgHash: prev.imgHash || null, result: { screen: 'tax', account: null, count: rows.length } });
+  delete S.edits[capId];
+  return n;
+}
+function taxReviewTable(c) {
+  const res = c.result; const rows = editRows(c); const sumEl = h('div', { class: 'msum' }); const saveBtn = h('button', { class: 'btn primary', type: 'button' }); const trs = [];
+  const sync = () => {
+    taxMatch(rows);
+    rows.forEach((r, i) => { const e = trs[i] && trs[i].querySelector('[data-st]'); if (e) { e.className = 'st ' + (r.tm.st === 'upd' ? 'upgrade' : r.tm.st); e.textContent = r.tm.st === 'new' ? '신규' : r.tm.st === 'nodate' ? '날짜 확인' : r.tm.text; } });
+    const n = rows.filter((r) => r.include !== false && r.date).length; const nd = rows.filter((r) => r.include !== false && r.date && r.status === 'due').length;
+    sumEl.replaceChildren(h('div', { class: 'mline', text: '세금 자료 ' + rows.length + '건 · 납부 ' + rows.filter((r) => r.status === 'paid').length + ' · 예정 ' + rows.filter((r) => r.status === 'due').length }),
+      h('div', { class: 'sub', text: '납부한 세금은 세금 탭 납부 기록에, 낼 세금(고지서)은 예정 세금에 들어갑니다. 날짜가 가까운(±45일) 같은 세목 예정이 있으면 그 금액·날짜를 고칩니다.' }));
+    saveBtn.textContent = n ? n + '건 세금 탭에 반영' + (nd ? ' (예정 ' + nd + ')' : '') : '반영할 항목 없음 · 완료 처리';
+  };
+  rows.forEach((r) => {
+    const inp = (key, type, label) => h('input', { type: type || 'text', 'aria-label': label, value: key === 'amount' ? won(r.amount) : (r[key] || ''), inputMode: key === 'amount' ? 'numeric' : null,
+      oninput: (e) => { if (key === 'amount') { const v = toNum(e.target.value); if (Number.isFinite(v)) r.amount = Math.round(v); } else { r[key] = e.target.value; if (key === 'name') r.group = taxGroupOf(r.name); } sync(); } });
+    const tr = h('tr', {}, h('td', { class: 'ck' }, h('input', { type: 'checkbox', checked: r.include !== false, 'aria-label': '반영에 포함', onchange: (e) => { r.include = e.target.checked; sync(); } })),
+      h('td', { class: 'stc' }, h('span', { 'data-st': '1', class: 'st new', text: '신규' })), h('td', { class: 'dt' }, inp('date', 'date', '날짜')), h('td', { class: 'ds' }, inp('name', 'text', '세목')),
+      h('td', { class: 'am' }, inp('amount', 'text', '금액')),
+      h('td', { class: 'kd' }, h('select', { 'aria-label': '구분', onchange: (e) => { r.kind = e.target.value; } }, ['국세', '지방세'].map((k) => h('option', { value: k, text: k, selected: r.kind === k })))),
+      h('td', { class: 'ct' }, h('select', { 'aria-label': '납부/예정', onchange: (e) => { r.status = e.target.value; sync(); } }, [['paid', '납부함'], ['due', '낼 세금 (예정)']].map(([k, t]) => h('option', { value: k, text: t, selected: r.status === k })))));
+    trs.push(tr);
+  });
+  sync();
+  saveBtn.addEventListener('click', async () => { saveBtn.disabled = true; try { const n = await saveTaxRows(c.id, rows); toast('세금 ' + n + '건을 세금 탭에 반영했습니다.'); } catch (e) { saveBtn.disabled = false; toast('저장하지 못했습니다.'); } });
+  return h('div', { class: 'rvwrap' }, sumEl, h('div', { class: 'scroll-x' }, h('table', { class: 'rv rv-tax' }, h('thead', {}, h('tr', {}, ['', '상태', '날짜', '세목', '금액(원)', '구분', '납부/예정'].map((t) => h('th', { text: t })))), h('tbody', {}, trs))), h('div', { class: 'savebar' }, saveBtn));
+}
 
 /* ================= render all ================= */
 let rT = 0;
 function fillChoosers() {
   const ch = cardChoices(); const sig = ch.map((o) => o.v + o.label).join(',');
-  const cc = $('capCard'); if (cc && cc.dataset.sig !== sig) { const cur = cc.value; cc.dataset.sig = sig; cc.replaceChildren(h('option', { value: '', text: '자동 인식' }), ...ch.map((o) => h('option', { value: o.v, text: o.label }))); cc.value = cur; }
+  const cc = $('capCard'); if (cc && cc.dataset.sig !== sig) { const cur = cc.value; cc.dataset.sig = sig; cc.replaceChildren(h('option', { value: '', text: '자동 인식' }), h('optgroup', { label: '통장' }, ...['우리', '농협', '신한'].map((a) => h('option', { value: 'acct:' + a, text: acctLabel(a) + (a === '우리' ? ' (마통)' : '') }))), h('optgroup', { label: '카드' }, ...ch.map((o) => h('option', { value: o.v, text: o.label }))), h('optgroup', { label: '세금' }, h('option', { value: 'tax', text: '세금 고지서·납부 내역' }))); cc.value = cur; }
   const mt = $('mType'); if (mt && mt.dataset.sig !== sig) { const cur = mt.value; mt.dataset.sig = sig;
     mt.replaceChildren(...['우리', '농협', '신한'].map((k) => h('option', { value: k, text: acctLabel(k) })), ...ch.map((o) => h('option', { value: 'card:' + o.v, text: '카드 · ' + o.label }))); if (cur) mt.value = cur; }
 }
@@ -1005,7 +1307,7 @@ function render() {
   cancelAnimationFrame(rT);
   rT = requestAnimationFrame(() => {
     const ser = series(); const cur = ser[ser.length - 1];
-    fillChoosers(); renderTop(cur); renderKpis(ser); renderChart(ser); renderLimits(); renderFlow(); renderQueue(false); renderTx(); renderCapLog(); renderPlan(ser); renderCal(); renderCards(); renderTax();
+    fillChoosers(); renderTop(cur); renderKpis(ser); renderHome(); renderWoori(ser); renderNh(); renderQueue(false); renderTx(); renderCapLog(); renderCal(); renderCards(); renderTax();
   });
 }
 function setTab(t) {
@@ -1017,7 +1319,7 @@ function setTab(t) {
 
 /* ================= events ================= */
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
-window.addEventListener('hashchange', () => { const t = location.hash.slice(1); if (TABS.includes(t) && t !== S.tab) setTab(t); });
+window.addEventListener('hashchange', () => { const t = location.hash.slice(1) === 'plan' ? 'woori' : location.hash.slice(1); if (TABS.includes(t) && t !== S.tab) setTab(t); });
 $('txSearch').addEventListener('input', (e) => { S.txq = e.target.value.trim().toLowerCase(); renderTx(true); });
 document.querySelectorAll('#txFilter .chip').forEach((b) => b.addEventListener('click', () => { S.txf = b.dataset.f; document.querySelectorAll('#txFilter .chip').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); S.editId = null; S.memoId = null; renderTx(true); }));
 $('surplusSel').addEventListener('change', (e) => { S.surplus = Number(e.target.value); render(); });
@@ -1078,9 +1380,9 @@ $('setForm').addEventListener('submit', (e) => {
 });
 // 창 크기뿐 아니라 PC 배치가 바뀌어 차트 칸 폭이 달라질 때도 다시 그림
 let rzT = 0, rzW = 0;
-const rzRun = () => { clearTimeout(rzT); rzT = setTimeout(() => { const w = $('chart').clientWidth; if (S.tab === 'home' && w && w !== rzW) { rzW = w; renderChart(series()); } }, 150); };
+const rzRun = () => { clearTimeout(rzT); rzT = setTimeout(() => { const w = $('chart').clientWidth; if (S.tab === 'woori' && w && w !== rzW) { rzW = w; renderChart(series()); } if (S.tab === 'nh') renderNh(); }, 150); };
 window.addEventListener('resize', rzRun);
-if (window.ResizeObserver) new ResizeObserver(rzRun).observe($('chart'));
+if (window.ResizeObserver) { const ro = new ResizeObserver(rzRun); ro.observe($('chart')); ro.observe($('rhythm')); }
 // PC 키보드: 달력 탭에서 ← → 로 달 이동
 document.addEventListener('keydown', (e) => {
   if (S.tab !== 'cal' || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -1091,6 +1393,6 @@ document.addEventListener('keydown', (e) => {
 
 /* ================= start ================= */
 (function start() {
-  const t0 = location.hash.slice(1); setTab(TABS.includes(t0) ? t0 : 'home');
+  const t0 = location.hash.slice(1) === 'plan' ? 'woori' : location.hash.slice(1); setTab(TABS.includes(t0) ? t0 : 'home');
   connect();
 })();
